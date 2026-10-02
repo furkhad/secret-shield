@@ -4,23 +4,42 @@ SecretShield is a Python security scanner for detecting accidentally exposed sec
 
 ## Status
 
-**Stage 0 — foundations. Not yet a scanner.**
+**Stage 1 — a working single-file scanner. No vendor rules, no CLI yet.**
 
-The detection engine, the CLI, and the reports do not exist yet. What is
-implemented today is the layer everything else is built on, and the one that is
-hardest to retrofit safely: redaction and the data model.
+You can now scan one text file and read a human-readable report:
+
+```python
+import secret_shield
+
+result = secret_shield.scan_file("config/settings.py")
+print(secret_shield.render_text(result))
+```
+
+Detection today is **entropy screening only**. It finds values that look like
+machine-generated key material regardless of vendor, and it deliberately cannot
+tell you whether any of them is a real credential. A SHA-1 commit hash, a UUID
+and a leaked API key are the same shape to an entropy measurement, so all three
+are reported, at MEDIUM severity and PROBABLE confidence, for a human to
+dismiss.
 
 | Component | State |
 | --- | --- |
 | `masking` — redaction, fingerprints, sanitized excerpts | Done, tested |
 | `models` — `Finding`, `Location`, `ScanResult`, enums | Done, tested |
 | `exit_codes` — the CI exit-code contract | Done |
-| Detection rules, entropy analysis | Not started |
+| `entropy` — Shannon entropy, evenness ratio, charset families | Done, tested |
+| `tokenizer` — conservative candidate extraction | Done, tested |
+| `detectors` — high-entropy rule (one rule, MEDIUM ceiling) | Done, tested |
+| `scanner` — `scan_file`, safe text reading, statistics | Done, tested |
+| `report` — `render_text`, pure and deterministic | Done, tested |
+| Vendor rules (AWS, GitHub, Stripe, ...) | Not started |
+| Directory traversal, allowlists, context scoring | Not started |
 | Filesystem and Git history scanning | Not started |
-| CLI, reports | Not started |
+| CLI, JSON and Markdown reports | Not started |
 
-`python -m secret_shield` exits with code `5` and says so plainly, rather than
-pretending to be a working scanner.
+`python -m secret_shield` still exits with code `5`. There is no CLI until
+directory traversal exists; scanning one file at a time by hand is not the
+intended interface.
 
 ## Goals
 
@@ -64,6 +83,16 @@ enforced by tests, because each one is expensive to add late.
    ANSI escapes are stripped before anything is displayed, so a hostile
    repository cannot reshape a report or repaint a terminal.
 
+7. **The scanner stays quiet on ordinary source code.** Entropy alone flags
+   every long mixed-character string, which in a Python repository means every
+   constant, f-string fragment and docstring cross-reference. The tokenizer
+   discards six shapes that are syntax rather than data — interpolation braces,
+   qualified references, named constants, documentation roles, regular
+   expression syntax, and call parentheses — plus anything spanning a line, on
+   the grounds that key material is single-line. Each filter states what it
+   suppresses in its docstring, and each accepted cost has a test pinning it.
+   Scanning this repository's own source produces zero findings.
+
 ## Project structure
 
 ```
@@ -72,16 +101,30 @@ src/secret_shield/          # src layout: tests cannot import repo files by acci
 ├── __main__.py             # `python -m secret_shield` (placeholder until the CLI lands)
 ├── models.py               # Finding, Location, ScanError, ScanResult, enums
 ├── masking.py              # mask(), fingerprint(), sanitize_excerpt()
-└── exit_codes.py           # the CI exit-code contract
+├── exit_codes.py           # the CI exit-code contract
+├── entropy.py              # Shannon entropy, evenness, charset families
+├── tokenizer.py            # candidate extraction and structural filters
+├── detectors/              # detection rules; currently one entropy rule
+│   └── entropy_rule.py
+├── scanner.py              # scan_file(): read one text file, return a result
+└── report/                 # ScanResult -> str; no I/O, no colours
+    └── text.py
 tests/
 ├── conftest.py             # synthetic fixtures; src/ bootstrap
-└── unit/
-    ├── test_masking.py
-    └── test_models.py
+├── unit/
+│   ├── test_masking.py
+│   ├── test_models.py
+│   ├── test_entropy.py
+│   ├── test_tokenizer.py
+│   ├── test_entropy_rule.py
+│   ├── test_scanner.py
+│   └── test_text_report.py
+└── integration/
+    └── test_single_file_scan.py
 ```
 
-Modules still to come: `config.py`, `pipeline.py`, `detectors/`, `filters/`,
-`sources/` (filesystem and Git history), `report/`, `cli.py`.
+Modules still to come: `config.py`, `pipeline.py`, `filters/`, `sources/`
+(filesystem and Git history), `cli.py`, and JSON and Markdown reporters.
 
 ## Development
 
@@ -99,6 +142,12 @@ Run a single file, or a single test:
 ```bash
 pytest tests/unit/test_masking.py
 pytest -k fingerprint
+```
+
+Scan a file the way the tests do:
+
+```bash
+python -c "import secret_shield as s; print(s.render_text(s.scan_file('README.md')))"
 ```
 
 ## Security

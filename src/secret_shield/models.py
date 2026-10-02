@@ -32,6 +32,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
+from .entropy import MAX_ENTROPY
 from .masking import (
     FINGERPRINT_LENGTH,
     REDACTION,
@@ -43,6 +44,7 @@ from .masking import (
 
 __all__ = [
     "TOOL_NAME",
+    "TOOL_VERSION",
     "SCHEMA_VERSION",
     "Severity",
     "Confidence",
@@ -58,12 +60,15 @@ __all__ = [
 TOOL_NAME: Final[str] = "secret-shield"
 """Canonical tool name used in report envelopes."""
 
+TOOL_VERSION: Final[str] = "0.1.0"
+"""Current version, recorded in report envelopes.
+
+Defined here rather than in ``__init__`` so that library modules can report the
+version without importing the package they live in.
+"""
+
 SCHEMA_VERSION: Final[str] = "1.0"
 """Version of the report schema. Consumers should break loudly on a change."""
-
-#: Shannon entropy is measured in bits per character and cannot exceed this
-#: bound, which is what a 256-symbol alphabet would produce.
-MAX_ENTROPY: Final[float] = 8.0
 
 _RULE_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 _COMMIT_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{40}$")
