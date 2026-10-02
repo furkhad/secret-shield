@@ -4,6 +4,12 @@ __pycache__/
 *$py.class
 *.so
 
+# Packaging / build metadata
+# With a src/ layout, editable installs write *.egg-info/ inside src/.
+build/
+dist/
+*.egg-info/
+
 # Virtual environments
 .venv/
 venv/

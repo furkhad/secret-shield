@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secret-shield"
+version = "0.1.0"
+description = "Find accidentally exposed secrets in source code, configuration files and Git history."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Furkhad Ahmed" }]
+keywords = ["security", "secret-scanning", "static-analysis", "devsecops", "git"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
+
+# Stage 0: no runtime dependencies. Everything uses the Python standard
+# library. Keeping this list empty is a deliberate security control, not a
+# stylistic preference -- a secret scanner is a high-value supply chain target.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+# The console entry point is intentionally NOT declared yet.
+#
+#   [project.scripts]
+#   secret-shield = "secret_shield.cli:main"
+#
+# It will be added in the same stage that implements `secret_shield.cli`.
+# Declaring it now would install a script that always fails.
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["secret_shield*"]
+
+[tool.setuptools.package-data]
+secret_shield = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
