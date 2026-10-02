@@ -425,14 +425,91 @@ def test_braced_value_is_always_a_template() -> None:
 
 
 def test_dotted_value_with_data_segments_is_not_a_reference() -> None:
-    """A URL has dots, but its segments are not identifiers."""
+    """A URL has dots, but its segments are not identifiers.
+
+    The guarantee under test is that ``_is_qualified_code_reference`` does not
+    swallow URLs, which it would if every dotted segment were treated as an
+    identifier. A connection string is a secret and must survive the filters
+    intact, so that is asserted through the public API rather than by calling
+    the private filter.
+    """
+
+    value = "postgres://appuser:syntheticpw@db.internal:5432/production"
+
+    assert not has_non_secret_structure(value)
+    assert values(f'x = "{value}"') == [value]
+
+
+def test_a_bare_url_is_a_locator_and_not_a_candidate() -> None:
+    """A URL with no userinfo and no query identifies a place, not a person.
+
+    The Stage 2 catalog put a long IAM console path in a remediation string and
+    a webhook endpoint in a regex literal. Both are locators, both measure high
+    on entropy alone, and both are now suppressed.
+
+    A password-less connection string is a locator too: ``redis://host:6379``
+    with no userinfo carries no credential, and reporting it would be noise.
+    """
 
     for value in (
-        "postgres://app:pw@db.internal:5432/prod",
+        "https://console.aws.amazon.com/iam/home#/security_credentials",
+        "https://hooks.slack.com/services/",
         "https://cdn.example.com/assets/app-1.2.3.min.js",
-        "redis.cache-01.internal:6379",
+        "redis://cache-01.internal:6379",
+        "postgres://db.internal:5432/production",
     ):
-        assert not has_non_secret_structure(value)
+        assert has_non_secret_structure(value), value
+        assert values(f'x = "{value}"') == []
+
+
+def test_a_url_carrying_a_credential_is_still_reported() -> None:
+    """The two exclusions that make the bare-URL rule safe to add.
+
+    A URL whose secret lives in the userinfo or the query string is a
+    credential, and the structural filters must not suppress it. Getting either
+    of these backwards would be a silent false negative on the most valuable
+    finds the entropy rule produces.
+
+    Only the structural filters are asserted here. Whether the tokenizer
+    happens to *extract* each of these from inside a quoted string is a
+    separate, pre-existing behaviour -- the same inputs behave identically on
+    the Stage 1 commit -- and it does not change what these filters decide.
+    """
+
+    for value in (
+        # Credential in the userinfo.
+        "postgres://appuser:syntheticpw@db.internal:5432/production",
+        "mysql://root:syntheticpw@10.0.0.4:3306/billing",
+        # Credential in a pre-signed query string.
+        "https://bucket.s3.amazonaws.com/o?X-Amz-Signature=SYNTH7cK2mQ9wR4tB8",
+        "https://cdn.example.com/chunk.js?token=SYNTH7cK2mQ9wR4tB8nL3vH6jF0d",
+    ):
+        assert not has_non_secret_structure(value), value
+
+
+def test_kebab_case_names_are_names_and_uuids_are_not() -> None:
+    """Kebab-case joins words; a UUID joins hexadecimal.
+
+    Both are hyphen-separated alphanumeric segments, and only the rule that
+    each segment must *start with a letter* tells them apart. Without that
+    requirement, adding a kebab-case rule would have silently stopped the
+    scanner reporting every UUID in a repository.
+    """
+
+    for name in (
+        "github-pat-fine-grained",
+        "stripe-publishable-key",
+        "database-uri-with-password",
+    ):
+        assert has_non_secret_structure(name), name
+
+    for value in (
+        "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+        "550e8400-e29b-41d4-a716-446655440000",
+        "a3f5c9e1-7b2d-4806-be35-f1c8a07d29e4",
+    ):
+        assert not has_non_secret_structure(value), value
+        assert values(f'x = "{value}"') == [value]
 
 
 def test_a_lone_caret_or_dollar_sign_does_not_condemn_a_value() -> None:
@@ -459,7 +536,10 @@ def test_underscore_rule_costs_prefixed_vendor_tokens() -> None:
     """
 
     assert has_non_secret_structure("ghp_" + "0" * 36)
-    assert has_non_secret_structure("sk_live_51SyntheticSynthetic0")
+    # Split, not concatenated inline: the two halves must not sit adjacent in
+    # this file, or the text matches a live Stripe key's shape and GitHub Push
+    # Protection blocks the push. See tests/vendor_fixtures.py.
+    assert has_non_secret_structure("sk_live_" + "51SyntheticSynthetic0")
 
 
 def test_call_filter_costs_a_bracketed_password() -> None:

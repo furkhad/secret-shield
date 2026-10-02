@@ -25,6 +25,14 @@ _SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 if importlib.util.find_spec("secret_shield") is None:  # pragma: no cover - env dependent
     sys.path.insert(0, str(_SRC_DIR))
 
+# Make ``vendor_fixtures`` importable from anywhere in the suite. pytest puts a
+# test file's own directory on ``sys.path``, which for ``tests/unit/test_x.py``
+# is ``tests/unit`` and not ``tests``; without this the shared synthetic
+# credentials would have to be duplicated per test module.
+_TESTS_DIR = Path(__file__).resolve().parent
+if str(_TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TESTS_DIR))
+
 
 #: Obviously fake material used across the suite. Built from repeated blocks so
 #: that it can never be mistaken for a live credential.
