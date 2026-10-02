@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets / local configuration
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Generated reports
+audit_report.md
+results.json
+
+# Misc
+*.log
