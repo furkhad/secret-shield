@@ -276,12 +276,19 @@ def test_documented_example_keys_are_treated_as_placeholders() -> None:
 
 
 def test_placeholder_inside_quotes_is_dropped_by_the_tokenizer() -> None:
-    assert values(f'api_key = "YOUR_KEY_HERE_REPLACE_ME_1234"') == []
+    assert values('api_key = "YOUR_KEY_HERE_REPLACE_ME_1234"') == []
 
 
 @pytest.mark.parametrize(
     "template",
-    ["${SECRET}", "${{SECRET}}", "{{ secrets.API_KEY }}", "<%= ENV['KEY'] %>", "%(KEY)s", "@{token}"],
+    [
+        "${SECRET}",
+        "${{SECRET}}",
+        "{{ secrets.API_KEY }}",
+        "<%= ENV['KEY'] %>",
+        "%(KEY)s",
+        "@{token}",
+    ],
 )
 def test_template_expressions_are_detected(template: str) -> None:
     assert is_template_expression(template)
@@ -303,7 +310,12 @@ def test_template_value_is_dropped_by_the_tokenizer() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["aaaaaaaaaaaaaaaaaaaaaaaa", "abcdabcdabcdabcdabcdabcd", "abcdefghijklmnopqrstuvwx", "9876543210"],
+    [
+        "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "abcdabcdabcdabcdabcdabcd",
+        "abcdefghijklmnopqrstuvwx",
+        "9876543210",
+    ],
 )
 def test_repetitive_and_sequential_values_are_dropped(value: str) -> None:
     assert has_repetitive_structure(value)
@@ -562,15 +574,18 @@ def test_filters_do_not_remove_everything() -> None:
     detector has stopped working, and every test above would still pass.
     """
 
-    text = "\n".join(f'key_{index} = "{value}"' for index, value in enumerate(
-        [
-            SYNTHETIC_TOKEN,
-            "a3f5c9e17b2d4806be35f1c8a07d29e4",
-            "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-            "MFRGGZDFMZTWQ2LKNNWG23TPOA====",
-            "aB3-xY9_zQ1-mN4-pR7-tS0-uV3-wX6yZ8ab",
-        ]
-    ))
+    text = "\n".join(
+        f'key_{index} = "{value}"'
+        for index, value in enumerate(
+            [
+                SYNTHETIC_TOKEN,
+                "a3f5c9e17b2d4806be35f1c8a07d29e4",
+                "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+                "MFRGGZDFMZTWQ2LKNNWG23TPOA====",
+                "aB3-xY9_zQ1-mN4-pR7-tS0-uV3-wX6yZ8ab",
+            ]
+        )
+    )
 
     assert len(values(text)) == 5
 
@@ -624,7 +639,19 @@ def test_token_carries_its_origin() -> None:
 
 
 def test_tokenizer_never_raises_on_hostile_input() -> None:
-    for text in ['"', "'", "`", "\\", "#", "=", 'x="', "\x00", "\ud800", "a" * 100000, "\n" * 1000]:
+    for text in [
+        '"',
+        "'",
+        "`",
+        "\\",
+        "#",
+        "=",
+        'x="',
+        "\x00",
+        "\ud800",
+        "a" * 100000,
+        "\n" * 1000,
+    ]:
         candidates(text)  # must not raise
 
 
@@ -657,9 +684,9 @@ def test_a_span_survives_a_collapsed_escape_sequence() -> None:
     """``length`` is the value; ``span`` is the source. They differ here, and
     pretending otherwise would make an escape-bearing literal overlap test lie."""
 
-    token, = candidates('k = "a\\nb"')
+    (token,) = candidates('k = "a\\nb"')
 
     assert token.value == "anb"
     assert token.length == 3
     assert token.span == (5, 9)
-    assert 'k = "a\\nb"'[slice(*token.span)] == 'a\\nb'
+    assert 'k = "a\\nb"'[slice(*token.span)] == "a\\nb"

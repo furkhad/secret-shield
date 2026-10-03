@@ -34,7 +34,9 @@ def _require(marker: str, *values: str) -> None:
 
     for value in values:
         if marker not in value:
-            raise AssertionError(f"fixture is not visibly synthetic: {value[:4]}...{len(value)} chars")
+            raise AssertionError(
+                f"fixture is not visibly synthetic: {value[:4]}...{len(value)} chars"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +77,9 @@ _require(
 OPENAI_LEGACY_KEY = "sk-SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0xY2zA4bC6dE8f"
 """``sk-`` + 48 alphanumerics, the documented legacy format."""
 
-OPENAI_PROJECT_KEY = "sk-proj-SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0xY2zA4bC6dE8fG0hJ2kL4mN6pQ8"
+OPENAI_PROJECT_KEY = (
+    "sk-proj-SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0xY2zA4bC6dE8fG0hJ2kL4mN6pQ8"
+)
 """``sk-proj-`` + a long alphanumeric-and-dash body. The exact length is not
 published by OpenAI, so the rule bounds it from below only."""
 
@@ -266,9 +270,9 @@ def test_fixture_lengths_match_vendor_formats() -> None:
     assert len(AWS_ACCESS_KEY_ID) == 20, "AKIA access key id must be 20 chars"
     assert len(AWS_TEMP_CREDENTIAL_ID) == 20, "ASIA temporary id must be 20 chars"
     assert len(AWS_SECRET_ACCESS_KEY) == 40, "AWS secret key must be 40 chars"
-    assert re.fullmatch(r"[A-Za-z0-9/+=]{40}", AWS_SECRET_ACCESS_KEY), (
-        "AWS secret key must use the documented alphabet"
-    )
+    assert re.fullmatch(
+        r"[A-Za-z0-9/+=]{40}", AWS_SECRET_ACCESS_KEY
+    ), "AWS secret key must use the documented alphabet"
 
     assert len(OPENAI_LEGACY_KEY) == 51, "legacy OpenAI key must be sk- + 48"
     assert re.fullmatch(r"sk-[A-Za-z0-9]{48}", OPENAI_LEGACY_KEY)
@@ -283,9 +287,9 @@ def test_fixture_lengths_match_vendor_formats() -> None:
         GITHUB_REFRESH_TOKEN,
     ):
         assert len(token) == 40, f"classic GitHub token must be 40 chars: {token[:4]}"
-        assert re.fullmatch(r"gh[pours]_[A-Za-z0-9]{36}", token), (
-            f"GitHub classic token must be a known prefix + 36 alnum: {token[:4]}"
-        )
+        assert re.fullmatch(
+            r"gh[pours]_[A-Za-z0-9]{36}", token
+        ), f"GitHub classic token must be a known prefix + 36 alnum: {token[:4]}"
 
     assert GITHUB_FINE_GRAINED_PAT.startswith("github_pat_")
 

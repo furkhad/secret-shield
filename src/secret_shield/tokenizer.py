@@ -348,7 +348,10 @@ def candidates(text: str) -> list[Token]:
                 value_start = probe + 1
                 while value_start < length and normalized[value_start] in " \t":
                     value_start += 1
-                if value_start < length and normalized[value_start] not in _QUOTE_CHARACTERS:
+                if (
+                    value_start < length
+                    and normalized[value_start] not in _QUOTE_CHARACTERS
+                ):
                     run_end = _scan_unquoted(normalized, value_start)
                     if run_end > value_start:
                         found.append(
@@ -435,7 +438,9 @@ def is_template_expression(value: str) -> bool:
     """
 
     if not isinstance(value, str):
-        raise TypeError(f"is_template_expression() expects str, got {type(value).__name__}")
+        raise TypeError(
+            f"is_template_expression() expects str, got {type(value).__name__}"
+        )
 
     trimmed = value.strip()
     if trimmed in _EXACT_TEMPLATE_VALUES:
@@ -690,7 +695,9 @@ def has_repetitive_structure(value: str) -> bool:
     """
 
     if not isinstance(value, str):
-        raise TypeError(f"has_repetitive_structure() expects str, got {type(value).__name__}")
+        raise TypeError(
+            f"has_repetitive_structure() expects str, got {type(value).__name__}"
+        )
 
     length = len(value)
     if length < 4:

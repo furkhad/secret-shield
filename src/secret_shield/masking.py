@@ -194,7 +194,9 @@ def fingerprint(value: str, *, key: bytes | None = None) -> str:
         digest = hashlib.sha256(payload).hexdigest()
     else:
         if not isinstance(key, (bytes, bytearray)):
-            raise TypeError(f"fingerprint() key must be bytes, got {type(key).__name__}")
+            raise TypeError(
+                f"fingerprint() key must be bytes, got {type(key).__name__}"
+            )
         if not key:
             raise ValueError("fingerprint() key must not be empty")
         digest = hmac.new(bytes(key), payload, hashlib.sha256).hexdigest()
@@ -225,8 +227,12 @@ def contains_control_characters(text: str) -> bool:
     """
 
     if not isinstance(text, str):
-        raise TypeError(f"contains_control_characters() expects str, got {type(text).__name__}")
-    return any(unicodedata.category(character) in _REMOVED_CATEGORIES for character in text)
+        raise TypeError(
+            f"contains_control_characters() expects str, got {type(text).__name__}"
+        )
+    return any(
+        unicodedata.category(character) in _REMOVED_CATEGORIES for character in text
+    )
 
 
 def strip_control_characters(text: str) -> str:
@@ -248,7 +254,9 @@ def strip_control_characters(text: str) -> str:
     )
 
 
-def normalize_spans(spans: Iterable[Sequence[int]], *, line_length: int) -> tuple[Span, ...]:
+def normalize_spans(
+    spans: Iterable[Sequence[int]], *, line_length: int
+) -> tuple[Span, ...]:
     """Clamp, sort and merge character ranges into disjoint, ordered spans.
 
     Detection code produces spans from several different sources that may

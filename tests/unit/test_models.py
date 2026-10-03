@@ -124,7 +124,9 @@ def test_from_label_round_trips(enum_class: type, label: str) -> None:
     "label, expected",
     [("HIGH", Severity.HIGH), (" high ", Severity.HIGH)],
 )
-def test_from_label_is_forgiving_about_formatting(label: str, expected: Severity) -> None:
+def test_from_label_is_forgiving_about_formatting(
+    label: str, expected: Severity
+) -> None:
     assert Severity.from_label(label) is expected
 
 
@@ -184,7 +186,10 @@ def test_location_requires_a_full_commit_hash() -> None:
     with pytest.raises(ValueError):
         make_location(source_kind=SourceKind.GIT, commit="da2dc5d")
     # A full 40-character lowercase SHA-1 is accepted.
-    assert make_location(source_kind=SourceKind.GIT, commit="da2dc5d" + ("0" * 33)) is not None
+    assert (
+        make_location(source_kind=SourceKind.GIT, commit="da2dc5d" + ("0" * 33))
+        is not None
+    )
 
 
 def test_location_rejects_uppercase_commit_hashes() -> None:
@@ -204,7 +209,9 @@ def test_location_display_omits_unknown_parts() -> None:
 
 
 def test_location_display_shortens_the_commit() -> None:
-    location = make_location(source_kind=SourceKind.GIT, commit="a" * 40, line=None, column=None)
+    location = make_location(
+        source_kind=SourceKind.GIT, commit="a" * 40, line=None, column=None
+    )
 
     assert location.to_display() == f"config/settings.py@{'a' * 12}"
 
@@ -310,7 +317,9 @@ def test_finding_supports_keyed_fingerprints() -> None:
 def test_multiline_values_are_fully_redacted() -> None:
     """A multi-line block must never keep a visible prefix or suffix."""
 
-    finding = make_finding(EXAMPLE_MULTILINE_KEY, policy=MaskPolicy(10, 10, name="leaky"))
+    finding = make_finding(
+        EXAMPLE_MULTILINE_KEY, policy=MaskPolicy(10, 10, name="leaky")
+    )
 
     assert finding.masked_value == REDACTION
     assert "\n" not in finding.masked_value
@@ -318,7 +327,9 @@ def test_multiline_values_are_fully_redacted() -> None:
 
 
 def test_surrounding_whitespace_does_not_defeat_masking() -> None:
-    finding = make_finding(f"  {SYNTHETIC_SECRET}\n", policy=MaskPolicy(0, 0, name="strict"))
+    finding = make_finding(
+        f"  {SYNTHETIC_SECRET}\n", policy=MaskPolicy(0, 0, name="strict")
+    )
 
     assert finding.masked_value == REDACTION
     assert "\n" not in finding.masked_value
@@ -334,7 +345,9 @@ def test_from_match_rejects_non_string_values() -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("rule_id", ["", "Has Spaces", "UPPER", "-leading", "trailing-", "a--b"])
+@pytest.mark.parametrize(
+    "rule_id", ["", "Has Spaces", "UPPER", "-leading", "trailing-", "a--b"]
+)
 def test_finding_rejects_invalid_rule_ids(rule_id: str) -> None:
     finding = make_finding()
     with pytest.raises(ValueError):
@@ -374,7 +387,9 @@ def test_finding_accepts_a_zero_length_value() -> None:
     assert dataclasses.replace(make_finding(), value_length=0).value_length == 0
 
 
-@pytest.mark.parametrize("bad", ["", "short", "0123456789AB", "0123456789ABC", "zzzzzzzzzzzz", None])
+@pytest.mark.parametrize(
+    "bad", ["", "short", "0123456789AB", "0123456789ABC", "zzzzzzzzzzzz", None]
+)
 def test_finding_rejects_an_invalid_fingerprint(bad: object) -> None:
     with pytest.raises(ValueError):
         dataclasses.replace(make_finding(), value_fingerprint=bad)
@@ -474,7 +489,11 @@ def test_finding_sort_key_tolerates_missing_positions() -> None:
 
 
 def test_scan_error_to_dict_has_stable_keys() -> None:
-    assert list(ScanError("boom", path="a/b.py").to_dict()) == ["code", "path", "reason"]
+    assert list(ScanError("boom", path="a/b.py").to_dict()) == [
+        "code",
+        "path",
+        "reason",
+    ]
 
 
 def test_scan_error_requires_a_reason() -> None:
@@ -551,7 +570,9 @@ def test_scan_result_confidence_counts_are_complete() -> None:
 def test_scan_result_category_counts_are_sorted() -> None:
     result = ScanResult(
         findings=[
-            make_finding(category=SecretCategory.STRIPE, raw_value=SYNTHETIC_SECRET + "1"),
+            make_finding(
+                category=SecretCategory.STRIPE, raw_value=SYNTHETIC_SECRET + "1"
+            ),
             make_finding(category=SecretCategory.AWS, raw_value=SYNTHETIC_SECRET + "2"),
         ]
     )
@@ -607,14 +628,17 @@ def test_scan_result_serialization_is_deterministic() -> None:
     )
 
     assert result.to_json() == result.to_json()
-    assert result.to_json() == ScanResult(
-        findings=[make_finding(location=make_location(line=2)), make_finding()],
-        errors=[ScanError("boom", path="a.py")],
-        files_scanned=3,
-        bytes_scanned=1024,
-        duration_seconds=0.5,
-        tool_version="0.1.0",
-    ).to_json()
+    assert (
+        result.to_json()
+        == ScanResult(
+            findings=[make_finding(location=make_location(line=2)), make_finding()],
+            errors=[ScanError("boom", path="a.py")],
+            files_scanned=3,
+            bytes_scanned=1024,
+            duration_seconds=0.5,
+            tool_version="0.1.0",
+        ).to_json()
+    )
 
 
 def test_scan_result_envelope_shape() -> None:

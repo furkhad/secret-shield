@@ -44,7 +44,9 @@ from secret_shield.models import (
     SourceKind,
 )
 from secret_shield.sources import git_cmd, git_history
-from secret_shield.sources.filesystem import _cap_long_lines as filesystem_cap_long_lines
+from secret_shield.sources.filesystem import (
+    _cap_long_lines as filesystem_cap_long_lines,
+)
 from secret_shield.sources.git_history import (
     DEFAULT_MAX_BLOBS,
     DEFAULT_MAX_BLOB_SIZE,
@@ -96,7 +98,9 @@ def _finding(path: str = "a.txt", masked: str = "AKIA****KEY09A") -> Finding:
     )
 
 
-def _ref(path: str, commit: str = "a" * 40, commit_time: int = 1_700_000_000) -> git_cmd.HistoryRef:
+def _ref(
+    path: str, commit: str = "a" * 40, commit_time: int = 1_700_000_000
+) -> git_cmd.HistoryRef:
     return git_cmd.HistoryRef(
         commit=commit,
         commit_time=commit_time,
@@ -285,7 +289,9 @@ class TestReportPath:
             ("a/./b.txt", "a/b.txt"),
         ],
     )
-    def test_a_crafted_path_cannot_escape_the_repository(self, raw: str, expected: str) -> None:
+    def test_a_crafted_path_cannot_escape_the_repository(
+        self, raw: str, expected: str
+    ) -> None:
         """Segments are *removed*, not resolved, so no ``..`` survives to be printed."""
 
         assert git_history._report_path(raw) == expected
@@ -445,7 +451,9 @@ class TestRelabel:
         )
         analyses: list[str] = []
 
-        def counting_analyze_text(text: str, display: str, **kwargs: object) -> tuple[Finding, ...]:
+        def counting_analyze_text(
+            text: str, display: str, **kwargs: object
+        ) -> tuple[Finding, ...]:
             analyses.append(display)
             return (_finding(display),)
 
@@ -497,7 +505,9 @@ class TestAnalyzeBlob:
     def test_a_secret_in_a_blob_is_found_and_addressed_at_the_commit(self) -> None:
         data = f'AWS_ACCESS_KEY_ID = "{SYNTHETIC_AWS_KEY}"\n'.encode("utf-8")
 
-        outcome = git_history._analyze_blob(data, self._record(), default_git_scan_config())
+        outcome = git_history._analyze_blob(
+            data, self._record(), default_git_scan_config()
+        )
 
         assert len(outcome.findings) == 1
         finding = outcome.findings[0]
@@ -511,9 +521,11 @@ class TestAnalyzeBlob:
         assert outcome.size == len(data)
 
     def test_the_secret_itself_is_never_kept_in_the_finding(self) -> None:
-        data = f'{SYNTHETIC_AWS_KEY}\n'.encode("utf-8")
+        data = f"{SYNTHETIC_AWS_KEY}\n".encode("utf-8")
 
-        outcome = git_history._analyze_blob(data, self._record(), default_git_scan_config())
+        outcome = git_history._analyze_blob(
+            data, self._record(), default_git_scan_config()
+        )
 
         assert outcome.findings
         for finding in outcome.findings:
@@ -525,7 +537,9 @@ class TestAnalyzeBlob:
         with_bom = git_history._analyze_blob(
             "﻿".encode("utf-8") + body, self._record(), default_git_scan_config()
         )
-        without = git_history._analyze_blob(body, self._record(), default_git_scan_config())
+        without = git_history._analyze_blob(
+            body, self._record(), default_git_scan_config()
+        )
 
         assert with_bom.findings[0].location == without.findings[0].location
 
@@ -534,7 +548,9 @@ class TestAnalyzeBlob:
 
         data = b"key = \xff\xfe\x00\x80\n"
 
-        outcome = git_history._analyze_blob(data, self._record(), default_git_scan_config())
+        outcome = git_history._analyze_blob(
+            data, self._record(), default_git_scan_config()
+        )
 
         assert outcome.findings == ()
         assert [error.code for error in outcome.errors] == ["invalid-encoding"]
@@ -572,10 +588,16 @@ class TestAnalyzeBlob:
         ).encode("utf-8")
 
         # One single line longer than the limit, so the cap actually fires.
-        flat = "-----BEGIN RSA PRIVATE KEY----- " + body + " -----END RSA PRIVATE KEY-----\n"
+        flat = (
+            "-----BEGIN RSA PRIVATE KEY----- "
+            + body
+            + " -----END RSA PRIVATE KEY-----\n"
+        )
         config = GitScanConfig(max_line_length=200)
 
-        outcome = git_history._analyze_blob(flat.encode("utf-8"), self._record(), config)
+        outcome = git_history._analyze_blob(
+            flat.encode("utf-8"), self._record(), config
+        )
 
         assert [error.code for error in outcome.errors] == ["line-too-long"]
         assert any("private" in finding.rule_id for finding in outcome.findings)
@@ -587,11 +609,15 @@ class TestAnalyzeBlob:
         assert any("private" in finding.rule_id for finding in capped.findings)
 
     def test_a_multi_line_block_is_collapsed_for_fusion(self) -> None:
-        data = b"AWS_ACCESS_KEY_ID\n  = \"" + SYNTHETIC_AWS_KEY.encode("ascii") + b"\"\n"
+        data = b'AWS_ACCESS_KEY_ID\n  = "' + SYNTHETIC_AWS_KEY.encode("ascii") + b'"\n'
 
-        outcome = git_history._analyze_blob(data, self._record(), default_git_scan_config())
+        outcome = git_history._analyze_blob(
+            data, self._record(), default_git_scan_config()
+        )
 
-        assert any(finding.rule_id == "aws-access-key-id" for finding in outcome.findings)
+        assert any(
+            finding.rule_id == "aws-access-key-id" for finding in outcome.findings
+        )
 
     def test_one_finding_per_path_when_a_blob_has_many(self) -> None:
         record = BlobRecord(
@@ -599,7 +625,7 @@ class TestAnalyzeBlob:
             paths=(_ref("one.env"), _ref("two.env"), _ref("three.env")),
             occurrences=3,
         )
-        data = f'KEY={SYNTHETIC_AWS_KEY}\n'.encode("utf-8")
+        data = f"KEY={SYNTHETIC_AWS_KEY}\n".encode("utf-8")
 
         outcome = git_history._analyze_blob(data, record, default_git_scan_config())
 
@@ -628,8 +654,12 @@ class TestCapLongLines:
             ("\n\n\n", 2),
         ],
     )
-    def test_the_copy_matches_the_filesystem_source(self, text: str, limit: int) -> None:
-        assert git_history._cap_long_lines(text, limit) == filesystem_cap_long_lines(text, limit)
+    def test_the_copy_matches_the_filesystem_source(
+        self, text: str, limit: int
+    ) -> None:
+        assert git_history._cap_long_lines(text, limit) == filesystem_cap_long_lines(
+            text, limit
+        )
 
     def test_a_capped_line_keeps_its_length_bound(self) -> None:
         """Line numbers must survive capping; only offsets may shift."""
@@ -678,7 +708,9 @@ class TestHistoryScan:
     def test_a_clean_scan_and_a_scan_that_looked_at_nothing_differ(self) -> None:
         """The counters are the only thing that tells these apart."""
 
-        clean = HistoryScan(result=ScanResult(), commits=3, blobs_seen=4, blobs_scanned=4)
+        clean = HistoryScan(
+            result=ScanResult(), commits=3, blobs_seen=4, blobs_scanned=4
+        )
         empty = HistoryScan(result=ScanResult())
 
         assert clean.findings == empty.findings == ()

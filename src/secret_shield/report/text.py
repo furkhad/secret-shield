@@ -63,7 +63,9 @@ def render_text(result: ScanResult, *, include_fingerprint: bool = True) -> str:
     """
 
     if not isinstance(result, ScanResult):
-        raise TypeError(f"render_text() expects a ScanResult, got {type(result).__name__}")
+        raise TypeError(
+            f"render_text() expects a ScanResult, got {type(result).__name__}"
+        )
 
     sections: list[str] = [
         _render_header(result),
@@ -95,7 +97,9 @@ def _render_findings(result: ScanResult, *, include_fingerprint: bool) -> str:
         "",
     ]
     for index, finding in enumerate(findings, start=1):
-        lines.append(_render_finding(index, finding, include_fingerprint=include_fingerprint))
+        lines.append(
+            _render_finding(index, finding, include_fingerprint=include_fingerprint)
+        )
         lines.append("")
     return "\n".join(lines)
 
@@ -194,9 +198,9 @@ def _render_summary(result: ScanResult) -> str:
 
 def _render_footer() -> str:
     return (
-        f"\nFindings are candidates, not confirmed secrets. Values are masked;\n"
-        f"nothing above can be used to reach a live system without your own copy\n"
-        f"of the original value."
+        "\nFindings are candidates, not confirmed secrets. Values are masked;\n"
+        "nothing above can be used to reach a live system without your own copy\n"
+        "of the original value."
     )
 
 

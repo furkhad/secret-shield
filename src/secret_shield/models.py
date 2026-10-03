@@ -231,7 +231,9 @@ class Location:
         self._validate_optional_int(self.column, "column")
         if self.commit is not None:
             if not isinstance(self.commit, str):
-                raise TypeError(f"commit must be str or None, got {type(self.commit).__name__}")
+                raise TypeError(
+                    f"commit must be str or None, got {type(self.commit).__name__}"
+                )
             if not _COMMIT_PATTERN.match(self.commit):
                 raise ValueError("commit must be a full 40-character lowercase SHA-1")
         self._validate_optional_int(self.commit_time, "commit_time")
@@ -243,7 +245,9 @@ class Location:
         if value is None:
             return
         if isinstance(value, bool) or not isinstance(value, int):
-            raise TypeError(f"{name} must be an int or None, got {type(value).__name__}")
+            raise TypeError(
+                f"{name} must be an int or None, got {type(value).__name__}"
+            )
         if value < 1:
             raise ValueError(f"{name} is 1-based and must be >= 1")
 
@@ -308,7 +312,9 @@ class ScanError:
         object.__setattr__(self, "reason", strip_control_characters(self.reason))
         if self.path is not None:
             if not isinstance(self.path, str):
-                raise TypeError(f"path must be str or None, got {type(self.path).__name__}")
+                raise TypeError(
+                    f"path must be str or None, got {type(self.path).__name__}"
+                )
             object.__setattr__(self, "path", strip_control_characters(self.path))
 
     def to_dict(self) -> dict[str, Any]:
@@ -317,7 +323,9 @@ class ScanError:
         return {"code": self.code, "path": self.path, "reason": self.reason}
 
     def __repr__(self) -> str:
-        return f"ScanError(path={self.path!r}, reason={self.reason!r}, code={self.code!r})"
+        return (
+            f"ScanError(path={self.path!r}, reason={self.reason!r}, code={self.code!r})"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,7 +376,9 @@ class Finding:
     remediation: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self.rule_id, str) or not _RULE_ID_PATTERN.match(self.rule_id):
+        if not isinstance(self.rule_id, str) or not _RULE_ID_PATTERN.match(
+            self.rule_id
+        ):
             raise ValueError(
                 "rule_id must be a lowercase kebab-case identifier, "
                 f"for example 'aws-access-key-id'; got {self.rule_id!r}"
@@ -381,7 +391,9 @@ class Finding:
             # Multi-line output would let a repository reshape a report, and a
             # masked value has no legitimate reason to contain one.
             raise ValueError("masked_value must not contain control characters")
-        if isinstance(self.value_length, bool) or not isinstance(self.value_length, int):
+        if isinstance(self.value_length, bool) or not isinstance(
+            self.value_length, int
+        ):
             raise TypeError("value_length must be an int")
         if self.value_length < 0:
             raise ValueError("value_length must be non-negative")
@@ -391,14 +403,18 @@ class Finding:
                 f"{FINGERPRINT_LENGTH} lowercase hexadecimal characters"
             )
         if self.entropy is not None:
-            if isinstance(self.entropy, bool) or not isinstance(self.entropy, (int, float)):
+            if isinstance(self.entropy, bool) or not isinstance(
+                self.entropy, (int, float)
+            ):
                 raise TypeError("entropy must be a float or None")
             if self.entropy != self.entropy:  # NaN
                 raise ValueError("entropy must not be NaN")
             if not 0.0 <= float(self.entropy) <= MAX_ENTROPY:
                 raise ValueError(f"entropy must be between 0.0 and {MAX_ENTROPY}")
         object.__setattr__(self, "matched_keywords", self._clean_keywords())
-        object.__setattr__(self, "remediation", strip_control_characters(self.remediation))
+        object.__setattr__(
+            self, "remediation", strip_control_characters(self.remediation)
+        )
 
     def _clean_keywords(self) -> tuple[str, ...]:
         """Validate keywords and freeze them into a tuple.
@@ -409,7 +425,9 @@ class Finding:
 
         keywords = self.matched_keywords
         if isinstance(keywords, str):
-            raise TypeError("matched_keywords must be an iterable of strings, not a string")
+            raise TypeError(
+                "matched_keywords must be an iterable of strings, not a string"
+            )
         cleaned: list[str] = []
         for keyword in keywords:
             if not isinstance(keyword, str) or not keyword.strip():
@@ -501,7 +519,12 @@ class Finding:
         reachable through several paths.
         """
 
-        return (self.rule_id, self.location.path, self.location.line, self.location.column)
+        return (
+            self.rule_id,
+            self.location.path,
+            self.location.line,
+            self.location.column,
+        )
 
     def secret_key(self) -> tuple[str, str]:
         """Identify the underlying secret across occurrences.
@@ -555,7 +578,9 @@ class Finding:
         byte-identical JSON. That makes report diffs meaningful.
         """
 
-        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False, sort_keys=False)
+        return json.dumps(
+            self.to_dict(), indent=indent, ensure_ascii=False, sort_keys=False
+        )
 
     def __repr__(self) -> str:
         # Only redacted material and non-secret metadata appear here. An
@@ -591,7 +616,9 @@ class ScanResult:
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "findings", _freeze(self.findings, Finding, "findings"))
+        object.__setattr__(
+            self, "findings", _freeze(self.findings, Finding, "findings")
+        )
         object.__setattr__(self, "errors", _freeze(self.errors, ScanError, "errors"))
         for name in ("files_scanned", "bytes_scanned"):
             value = getattr(self, name)
@@ -631,7 +658,9 @@ class ScanResult:
     def counts_by_confidence(self) -> Mapping[str, int]:
         """Count findings per confidence label, most confident first."""
 
-        counts = {confidence.label: 0 for confidence in sorted(Confidence, reverse=True)}
+        counts = {
+            confidence.label: 0 for confidence in sorted(Confidence, reverse=True)
+        }
         for finding in self.findings:
             counts[finding.confidence.label] += 1
         return counts
@@ -691,7 +720,9 @@ class ScanResult:
     def to_json(self, *, indent: int | None = None) -> str:
         """Serialize the whole report to deterministic JSON."""
 
-        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False, sort_keys=False)
+        return json.dumps(
+            self.to_dict(), indent=indent, ensure_ascii=False, sort_keys=False
+        )
 
     def __repr__(self) -> str:
         return (
@@ -704,11 +735,15 @@ def _freeze(values: Iterable[Any], expected_type: type, name: str) -> tuple[Any,
     """Convert an iterable of models into a tuple, validating element types."""
 
     if isinstance(values, (str, bytes)):
-        raise TypeError(f"{name} must be an iterable of {expected_type.__name__}, not a string")
+        raise TypeError(
+            f"{name} must be an iterable of {expected_type.__name__}, not a string"
+        )
     try:
         items = tuple(values)
     except TypeError:
-        raise TypeError(f"{name} must be an iterable of {expected_type.__name__}") from None
+        raise TypeError(
+            f"{name} must be an iterable of {expected_type.__name__}"
+        ) from None
     for item in items:
         if not isinstance(item, expected_type):
             raise TypeError(

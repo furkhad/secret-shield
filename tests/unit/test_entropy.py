@@ -61,7 +61,9 @@ def test_known_entropy_values(value: str, expected: float) -> None:
 def test_entropy_is_independent_of_order_for_equal_counts() -> None:
     """Entropy counts symbols, not positions."""
 
-    assert shannon_entropy("aabbcc") == pytest.approx(shannon_entropy("cbaabc"), abs=1e-12)
+    assert shannon_entropy("aabbcc") == pytest.approx(
+        shannon_entropy("cbaabc"), abs=1e-12
+    )
 
 
 def test_hex_entropy_is_capped_at_four_bits() -> None:
@@ -83,7 +85,16 @@ def test_english_prose_sits_near_four_bits() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["", "a", "ab", SYNTHETIC_HEX, SYNTHETIC_BASE64, SYNTHETIC_PROSE, "日本語のテキストです", "x" * 5000],
+    [
+        "",
+        "a",
+        "ab",
+        SYNTHETIC_HEX,
+        SYNTHETIC_BASE64,
+        SYNTHETIC_PROSE,
+        "日本語のテキストです",
+        "x" * 5000,
+    ],
 )
 def test_entropy_never_exceeds_the_alphabet_bound(value: str) -> None:
     """H is bounded by log2(distinct characters), and by MAX_ENTROPY overall."""
@@ -112,7 +123,9 @@ def test_entropy_depends_only_on_character_counts() -> None:
 
     value = "ab" * 500 + "c" * 20 + "d" * 3
 
-    assert shannon_entropy(value) == pytest.approx(shannon_entropy(value[::-1]), abs=1e-12)
+    assert shannon_entropy(value) == pytest.approx(
+        shannon_entropy(value[::-1]), abs=1e-12
+    )
 
 
 @pytest.mark.parametrize("bad", [None, 42, b"bytes", ["list"]])
@@ -140,14 +153,24 @@ def test_normalized_entropy_of_uniform_distribution_is_one() -> None:
 
 
 def test_normalized_entropy_is_between_zero_and_one() -> None:
-    for value in (SYNTHETIC_HEX, SYNTHETIC_BASE64, SYNTHETIC_PROSE, "aaab", "abcd" * 20):
+    for value in (
+        SYNTHETIC_HEX,
+        SYNTHETIC_BASE64,
+        SYNTHETIC_PROSE,
+        "aaab",
+        "abcd" * 20,
+    ):
         assert 0.0 <= normalized_entropy(value) <= 1.0
 
 
 def test_normalized_entropy_never_exceeds_one_despite_rounding() -> None:
     """A perfectly uniform string divides to exactly 1.0; rounding must not exceed it."""
 
-    for value in (SYNTHETIC_BASE64, "abcd" * 20, "".join(chr(97 + n % 26) for n in range(500))):
+    for value in (
+        SYNTHETIC_BASE64,
+        "abcd" * 20,
+        "".join(chr(97 + n % 26) for n in range(500)),
+    ):
         assert normalized_entropy(value) <= 1.0
 
 

@@ -125,7 +125,9 @@ class TestBinaryIsRejected:
             assert verdict(bytes(data)) is BinaryVerdict.NUL_BYTE, position
 
     def test_an_elf_header_is_binary(self) -> None:
-        assert verdict(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 8) is BinaryVerdict.NUL_BYTE
+        assert (
+            verdict(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 8) is BinaryVerdict.NUL_BYTE
+        )
 
     def test_a_png_header_is_binary(self) -> None:
         png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
@@ -190,7 +192,9 @@ class TestThresholdBoundaries:
 
     def test_a_custom_ratio_is_honoured(self) -> None:
         sample = ("\x01" * 5 + "a" * 95).encode()  # 5% control characters
-        assert verdict(sample, BinaryConfig(max_control_ratio=0.10)) is BinaryVerdict.TEXT
+        assert (
+            verdict(sample, BinaryConfig(max_control_ratio=0.10)) is BinaryVerdict.TEXT
+        )
         assert verdict(sample, BinaryConfig(max_control_ratio=0.01)) is (
             BinaryVerdict.CONTROL_HEAVY
         )
@@ -203,7 +207,9 @@ class TestThresholdBoundaries:
 
     def test_a_ratio_of_one_never_rejects(self) -> None:
         sample = ("\x01" * 99 + "a").encode()
-        assert verdict(sample, BinaryConfig(max_control_ratio=1.0)) is BinaryVerdict.TEXT
+        assert (
+            verdict(sample, BinaryConfig(max_control_ratio=1.0)) is BinaryVerdict.TEXT
+        )
 
 
 class TestSniffWindowBoundaries:
@@ -257,15 +263,16 @@ class TestSniffWindowBoundaries:
         """
 
         # The tails are genuinely cut off, so the repair is allowed to run.
-        assert verdict(b"a" * 10 + b"\xe6\x97" + b"tail", BinaryConfig(max_sniff_bytes=12)) is (
-            BinaryVerdict.TEXT
-        )
-        assert verdict(b"a" * 10 + b"\xe6\x28" + b"tail", BinaryConfig(max_sniff_bytes=12)) is (
-            BinaryVerdict.UNDECODABLE
-        )
+        assert verdict(
+            b"a" * 10 + b"\xe6\x97" + b"tail", BinaryConfig(max_sniff_bytes=12)
+        ) is (BinaryVerdict.TEXT)
+        assert verdict(
+            b"a" * 10 + b"\xe6\x28" + b"tail", BinaryConfig(max_sniff_bytes=12)
+        ) is (BinaryVerdict.UNDECODABLE)
 
     @pytest.mark.parametrize(
-        "tail", [b"\xff", b"\x80", b"\xc0", b"\xc1", b"\xf5", b"\xfe"],
+        "tail",
+        [b"\xff", b"\x80", b"\xc0", b"\xc1", b"\xf5", b"\xfe"],
         ids=["ff", "80", "c0", "c1", "f5", "fe"],
     )
     def test_impossible_lead_bytes_are_never_repaired(self, tail: bytes) -> None:

@@ -9,12 +9,10 @@ import pytest
 
 from secret_shield.config import (
     ENV_PREFIX,
-    MAX_CONFIG_BYTES,
     ConfigError,
     ConfigLayer,
     load_config,
 )
-from secret_shield.models import Severity
 
 
 def write_pyproject(root: Path, **settings: object) -> None:
@@ -46,7 +44,9 @@ def write_toml(root: Path, **settings: object) -> None:
             content.append(f'"{key}" = {json.dumps(value)}')
         else:
             content.append(f'"{key}" = {json.dumps(value)}')
-    (root / ".secretshield.toml").write_text("\n".join(content) + "\n", encoding="utf-8")
+    (root / ".secretshield.toml").write_text(
+        "\n".join(content) + "\n", encoding="utf-8"
+    )
 
 
 def write_json(root: Path, **settings: object) -> None:
@@ -92,7 +92,9 @@ def test_pyproject_toml_loads_nested_section(tmp_path: Path) -> None:
 
 
 def test_pyproject_toml_with_no_section_is_ignored(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text("[tool.other]\nkey = 1\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.other]\nkey = 1\n", encoding="utf-8"
+    )
     cfg = load_config(project_root=tmp_path)
     assert cfg.origins == ()
 
@@ -131,29 +133,45 @@ def test_precedence_order_is_correct(tmp_path: Path) -> None:
     write_toml(tmp_path, **{"scan.max_files": 2})
     write_json(tmp_path, **{"scan.max_files": 3})
     env = {f"{ENV_PREFIX}MAX_FILES": "4"}
-    cfg = load_config(project_root=tmp_path, environ=env, overrides={"scan.max_files": 5})
+    cfg = load_config(
+        project_root=tmp_path, environ=env, overrides={"scan.max_files": 5}
+    )
     assert cfg.path_scan.max_files == 5
     layers = [o.layer for o in cfg.origins]
-    assert layers == [ConfigLayer.PYPROJECT, ConfigLayer.TOML, ConfigLayer.JSON, ConfigLayer.ENVIRONMENT, ConfigLayer.OVERRIDES]
+    assert layers == [
+        ConfigLayer.PYPROJECT,
+        ConfigLayer.TOML,
+        ConfigLayer.JSON,
+        ConfigLayer.ENVIRONMENT,
+        ConfigLayer.OVERRIDES,
+    ]
 
 
 def test_env_boolean_parsing(tmp_path: Path) -> None:
     for val in ("1", "true", "yes", "on", "TRUE", "Yes"):
-        cfg = load_config(project_root=tmp_path, environ={f"{ENV_PREFIX}FOLLOW_SYMLINKS": val})
+        cfg = load_config(
+            project_root=tmp_path, environ={f"{ENV_PREFIX}FOLLOW_SYMLINKS": val}
+        )
         assert cfg.path_scan.filters.follow_symlinks is True
     for val in ("0", "false", "no", "off", "FALSE", "No"):
-        cfg = load_config(project_root=tmp_path, environ={f"{ENV_PREFIX}FOLLOW_SYMLINKS": val})
+        cfg = load_config(
+            project_root=tmp_path, environ={f"{ENV_PREFIX}FOLLOW_SYMLINKS": val}
+        )
         assert cfg.path_scan.filters.follow_symlinks is False
 
 
 def test_env_boolean_rejects_bad(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
-        load_config(project_root=tmp_path, environ={f"{ENV_PREFIX}FOLLOW_SYMLINKS": "maybe"})
+        load_config(
+            project_root=tmp_path, environ={f"{ENV_PREFIX}FOLLOW_SYMLINKS": "maybe"}
+        )
 
 
 def test_env_optional_integer_null_words(tmp_path: Path) -> None:
     for val in ("none", "null", "unlimited", "UNSET"):
-        cfg = load_config(project_root=tmp_path, environ={f"{ENV_PREFIX}MAX_DEPTH": val})
+        cfg = load_config(
+            project_root=tmp_path, environ={f"{ENV_PREFIX}MAX_DEPTH": val}
+        )
         assert cfg.path_scan.filters.max_depth is None
 
 
@@ -224,7 +242,10 @@ def test_config_produces_same_scanner_behavior_as_defaults(tmp_path: Path) -> No
 
     assert cfg.path_scan.max_files == default_path_scan_config().max_files
     assert cfg.path_scan.max_line_length == default_path_scan_config().max_line_length
-    assert cfg.path_scan.scan.max_file_size == default_path_scan_config().scan.max_file_size
+    assert (
+        cfg.path_scan.scan.max_file_size
+        == default_path_scan_config().scan.max_file_size
+    )
 
 
 def test_setting_source_tracking(tmp_path: Path) -> None:

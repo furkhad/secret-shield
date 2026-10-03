@@ -456,7 +456,9 @@ def git_environment(environ: Mapping[str, str] | None = None) -> dict[str, str]:
     """
 
     source = os.environ if environ is None else environ
-    cleaned = {name: value for name, value in source.items() if not name.startswith("GIT_")}
+    cleaned = {
+        name: value for name, value in source.items() if not name.startswith("GIT_")
+    }
     # ``_`` is not a GIT_ variable, but it is the environment hook Git's alias
     # expansion runs. A repository cannot set it; a CI job can.
     cleaned.pop("_", None)
@@ -497,7 +499,9 @@ def validate_revision_argument(value: str, name: str) -> str:
         # option, and the error names the actual problem instead of Git's.
         raise ValueError(f"{name} must not begin with '-'; it is a date, not an option")
     if len(text) > MAX_DATE_EXPRESSION_LENGTH:
-        raise ValueError(f"{name} must be at most {MAX_DATE_EXPRESSION_LENGTH} characters")
+        raise ValueError(
+            f"{name} must be at most {MAX_DATE_EXPRESSION_LENGTH} characters"
+        )
     for character in text:
         if character == " ":
             continue
@@ -876,7 +880,9 @@ class HistoryWalk:
                 f"--since={validate_revision_argument(self._since, 'since')}"
             )
         if self._until is not None:
-            subcommand.append(f"--until={validate_revision_argument(self._until, 'until')}")
+            subcommand.append(
+                f"--until={validate_revision_argument(self._until, 'until')}"
+            )
         subcommand.append("HEAD")
 
         commit: str | None = None

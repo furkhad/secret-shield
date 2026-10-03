@@ -114,7 +114,9 @@ def pattern_at(start: int, end: int, value: str, rule: Rule) -> RawMatch:
     )
 
 
-def evidence_at(start: int, end: int, value: str, entropy: float = 4.5) -> EntropyCandidate:
+def evidence_at(
+    start: int, end: int, value: str, entropy: float = 4.5
+) -> EntropyCandidate:
     """Build an :class:`EntropyCandidate` directly, for geometry tests."""
 
     return EntropyCandidate(
@@ -150,7 +152,9 @@ def merge_of(items: tuple[MergedMatch, ...], rule_id: str) -> MergedMatch:
     return next(item for item in items if item.id == rule_id)
 
 
-def findings_of(items: tuple[MergedMatch, ...], path: str = "config.env") -> tuple[Finding, ...]:
+def findings_of(
+    items: tuple[MergedMatch, ...], path: str = "config.env"
+) -> tuple[Finding, ...]:
     return tuple(item.to_finding(path) for item in items)
 
 
@@ -327,7 +331,10 @@ class TestOneSecretOneFinding:
         literal = text.index('"') + 1, text.rindex('"')
         merged = fuse(patterns, (evidence_at(*literal, text[literal[0] : literal[1]]),))
 
-        assert [item.detector for item in merged] == [DetectorKind.PATTERN, DetectorKind.PATTERN]
+        assert [item.detector for item in merged] == [
+            DetectorKind.PATTERN,
+            DetectorKind.PATTERN,
+        ]
         assert {item.id for item in merged} == {
             "stripe-secret-key-live",
             "stripe-restricted-key-live",
@@ -373,7 +380,10 @@ class TestIdentityComesFromTheVendorRule:
         text = f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"'
         pattern = find_matches(text)[0]
         alone = pattern.to_finding("config.env")
-        fused = merge_of(fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)), pattern.rule.id)
+        fused = merge_of(
+            fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)),
+            pattern.rule.id,
+        )
 
         finding = fused.to_finding("config.env")
 
@@ -396,7 +406,9 @@ class TestIdentityComesFromTheVendorRule:
         pattern = find_matches(text)[0]
         candidate = evidence_at(pattern.start_offset, pattern.end_offset, DB_URI)
 
-        finding = merge_of(fuse((pattern,), (candidate,)), pattern.rule.id).to_finding("app.conf")
+        finding = merge_of(fuse((pattern,), (candidate,)), pattern.rule.id).to_finding(
+            "app.conf"
+        )
 
         assert finding.value_length == len(DB_PASSWORD)
         assert "db.internal" not in finding.masked_value
@@ -407,7 +419,10 @@ class TestIdentityComesFromTheVendorRule:
 
         heuristic = pattern_at(0, 20, TEXT[0:20], synthetic_rule("shape-guess"))
         exact = pattern_at(
-            0, 20, TEXT[0:20], synthetic_rule("prefix-match", specificity=Specificity.EXACT)
+            0,
+            20,
+            TEXT[0:20],
+            synthetic_rule("prefix-match", specificity=Specificity.EXACT),
         )
 
         merged = fuse((heuristic, exact), (evidence_at(0, 20, TEXT[0:20]),))
@@ -440,12 +455,19 @@ class TestIdentityComesFromTheVendorRule:
         callers of the same engine, and they have to agree.
         """
 
-        def order_for(rule_id: str, priority: int = 100, specificity: Specificity = Specificity.HEURISTIC):
+        def order_for(
+            rule_id: str,
+            priority: int = 100,
+            specificity: Specificity = Specificity.HEURISTIC,
+        ):
             """The ordering key of a fresh match carrying a fresh rule."""
 
             return pattern_order(
                 pattern_at(
-                    0, 20, TEXT[:20], synthetic_rule(rule_id, priority=priority, specificity=specificity)
+                    0,
+                    20,
+                    TEXT[:20],
+                    synthetic_rule(rule_id, priority=priority, specificity=specificity),
                 )
             )
 
@@ -462,13 +484,18 @@ class TestIdentityComesFromTheVendorRule:
             ("gamma", 1),
             ("delta", 3),
         ]
-        keys = {rule_id: order_for(rule_id, priority=priority) for rule_id, priority in rules}
+        keys = {
+            rule_id: order_for(rule_id, priority=priority)
+            for rule_id, priority in rules
+        }
 
         for first in rules:
             for second in rules:
                 if first == second:
                     continue
-                assert keys[first[0]] < keys[second[0]] or keys[second[0]] < keys[first[0]]
+                assert (
+                    keys[first[0]] < keys[second[0]] or keys[second[0]] < keys[first[0]]
+                )
 
         # EXACT always sorts ahead of HEURISTIC, whatever the ids or priorities.
         assert order_for("zzz", specificity=Specificity.EXACT) < order_for(
@@ -492,7 +519,11 @@ class TestCompositeForEveryVendor:
     """
 
     CASES = [
-        ("aws", f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"', Severity.CRITICAL),
+        (
+            "aws",
+            f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"',
+            Severity.CRITICAL,
+        ),
         ("aws-id", f'aws_access_key_id = "{AWS_ACCESS_KEY_ID}"', Severity.MEDIUM),
         ("openai-project", f'OPENAI_API_KEY = "{OPENAI_PROJECT_KEY}"', Severity.HIGH),
         ("openai-legacy", f'OPENAI_API_KEY = "{OPENAI_LEGACY_KEY}"', Severity.HIGH),
@@ -585,7 +616,10 @@ class TestConfidence:
         pattern = find_matches(text)[0]
         assert pattern.confidence() is Confidence.PROBABLE
 
-        fused = merge_of(fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)), pattern.rule.id)
+        fused = merge_of(
+            fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)),
+            pattern.rule.id,
+        )
 
         assert fused.confidence is Confidence.HIGH_CONFIDENCE
 
@@ -596,11 +630,16 @@ class TestConfidence:
         pattern = find_matches(text)[0]
         assert pattern.confidence() is Confidence.HIGH_CONFIDENCE
 
-        fused = merge_of(fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)), pattern.rule.id)
+        fused = merge_of(
+            fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)),
+            pattern.rule.id,
+        )
 
         assert fused.confidence is Confidence.HIGH_CONFIDENCE
 
-    def test_corroboration_lifts_a_candidate_to_probable_before_adding_a_step(self) -> None:
+    def test_corroboration_lifts_a_candidate_to_probable_before_adding_a_step(
+        self,
+    ) -> None:
         """A CANDIDATE match must not end up below the evidence supporting it.
 
         The entropy rule never reports below PROBABLE, so promoting a CANDIDATE
@@ -660,7 +699,11 @@ class TestConfidence:
         contacted an issuing service.
         """
 
-        arrangable = [Confidence.CANDIDATE, Confidence.PROBABLE, Confidence.HIGH_CONFIDENCE]
+        arrangable = [
+            Confidence.CANDIDATE,
+            Confidence.PROBABLE,
+            Confidence.HIGH_CONFIDENCE,
+        ]
         checked = 0
 
         for base in arrangable:
@@ -682,7 +725,11 @@ class TestConfidence:
                     base_confidence=base,
                 )
                 pattern = pattern_at(0, 20, TEXT[:20], tuned)
-                for support in ((), (evidence_at(0, 20, TEXT[:20]),), (evidence_at(0, 10, TEXT[:10]),)):
+                for support in (
+                    (),
+                    (evidence_at(0, 20, TEXT[:20]),),
+                    (evidence_at(0, 10, TEXT[:10]),),
+                ):
                     for item in fuse((pattern,), support):
                         assert item.confidence is not Confidence.VERIFIED
                         assert item.confidence <= MAX_CONFIDENCE
@@ -737,7 +784,10 @@ class TestSeverity:
         pattern = find_matches(text)[0]
         assert pattern.rule.severity is Severity.MEDIUM
 
-        fused = merge_of(fuse((pattern,), (evidence_at(*pattern.span, pattern.value, entropy=7.9),)), pattern.rule.id)
+        fused = merge_of(
+            fuse((pattern,), (evidence_at(*pattern.span, pattern.value, entropy=7.9),)),
+            pattern.rule.id,
+        )
 
         assert fused.severity is Severity.MEDIUM
 
@@ -753,12 +803,17 @@ class TestSeverity:
         pattern = find_matches(text)[0]
         assert pattern.rule.severity is Severity.LOW
 
-        fused = merge_of(fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)), pattern.rule.id)
+        fused = merge_of(
+            fuse((pattern,), (evidence_at(*pattern.span, pattern.value),)),
+            pattern.rule.id,
+        )
 
         assert fused.severity is Severity.LOW
 
     def test_an_entropy_only_finding_is_capped_at_medium(self) -> None:
-        merged = fuse((), (evidence_at(0, 20, TEXT[:20]),), entropy_severity=Severity.MEDIUM)
+        merged = fuse(
+            (), (evidence_at(0, 20, TEXT[:20]),), entropy_severity=Severity.MEDIUM
+        )
 
         assert merged[0].severity is Severity.MEDIUM
 
@@ -770,12 +825,16 @@ class TestSeverity:
         caller passes the value straight in.
         """
 
-        merged = fuse((), (evidence_at(0, 20, TEXT[:20]),), entropy_severity=Severity.CRITICAL)
+        merged = fuse(
+            (), (evidence_at(0, 20, TEXT[:20]),), entropy_severity=Severity.CRITICAL
+        )
 
         assert merged[0].severity is Severity.MEDIUM
 
     def test_an_entropy_only_finding_honours_a_lower_configured_ceiling(self) -> None:
-        merged = fuse((), (evidence_at(0, 20, TEXT[:20]),), entropy_severity=Severity.LOW)
+        merged = fuse(
+            (), (evidence_at(0, 20, TEXT[:20]),), entropy_severity=Severity.LOW
+        )
 
         assert merged[0].severity is Severity.LOW
 
@@ -800,7 +859,10 @@ class TestSeverity:
             (
                 Severity.CRITICAL,
                 merge_of(
-                    fuse((aws_pattern,), (evidence_at(*aws_pattern.span, aws_pattern.value),)),
+                    fuse(
+                        (aws_pattern,),
+                        (evidence_at(*aws_pattern.span, aws_pattern.value),),
+                    ),
                     "aws-secret-access-key",
                 ).confidence,
             ),
@@ -808,7 +870,9 @@ class TestSeverity:
             # value does not make it urgent.
             (
                 Severity.LOW,
-                find_matches(f'STRIPE_KEY = "{STRIPE_PUBLISHABLE_LIVE}"')[0].confidence(),
+                find_matches(f'STRIPE_KEY = "{STRIPE_PUBLISHABLE_LIVE}"')[
+                    0
+                ].confidence(),
             ),
             # An anonymous high-entropy string: MEDIUM and PROBABLE.
             (
@@ -882,7 +946,9 @@ class TestDeduplication:
         assert len(dedupe((located(value="A" * 40), located(value="B" * 40)))) == 2
 
     def test_two_rules_at_one_position_stay_two(self) -> None:
-        assert len(dedupe((located(), located(rule_id="database-uri-with-password")))) == 2
+        assert (
+            len(dedupe((located(), located(rule_id="database-uri-with-password")))) == 2
+        )
 
     def test_deduplication_is_not_by_masked_value(self) -> None:
         """The failure that would delete real findings.
@@ -927,7 +993,11 @@ class TestDeduplication:
             located(path="m.env"),
         )
 
-        assert [item.location.path for item in dedupe(findings)] == ["z.env", "a.env", "m.env"]
+        assert [item.location.path for item in dedupe(findings)] == [
+            "z.env",
+            "a.env",
+            "m.env",
+        ]
 
     def test_deduplicating_nothing_is_harmless(self) -> None:
         assert dedupe(()) == ()
@@ -988,9 +1058,7 @@ class TestDeterminism:
 
     def test_input_order_does_not_change_the_result(self) -> None:
         patterns = find_matches(self.text)
-        entropy = tuple(
-            evidence_at(*match.span, match.value) for match in patterns[:3]
-        )
+        entropy = tuple(evidence_at(*match.span, match.value) for match in patterns[:3])
         reference = fuse(patterns, entropy)
 
         for seed in range(12):
@@ -1010,7 +1078,9 @@ class TestDeterminism:
         assert list(merged) == sorted(merged, key=lambda item: (*item.span, item.id))
 
     def test_analyzing_twice_gives_the_same_answer(self) -> None:
-        assert analyze_text(self.text, "config.env") == analyze_text(self.text, "config.env")
+        assert analyze_text(self.text, "config.env") == analyze_text(
+            self.text, "config.env"
+        )
 
     def test_two_registries_with_opposite_order_agree(self) -> None:
         forwards = DetectorRegistry(rules=RULES)
@@ -1045,7 +1115,12 @@ class TestNoRawSecretEscapes:
     rather than a shape check.
     """
 
-    SECRETS = (AWS_SECRET_ACCESS_KEY, DB_PASSWORD, GITHUB_PAT_CLASSIC, STRIPE_SECRET_LIVE)
+    SECRETS = (
+        AWS_SECRET_ACCESS_KEY,
+        DB_PASSWORD,
+        GITHUB_PAT_CLASSIC,
+        STRIPE_SECRET_LIVE,
+    )
 
     def _merged(self, text: str) -> tuple[MergedMatch, ...]:
         patterns = find_matches(text)
@@ -1055,7 +1130,9 @@ class TestNoRawSecretEscapes:
             (evidence_at(offset, offset + len(text) - offset, text[offset:]),),
         )
 
-    @pytest.mark.parametrize("text", [f'k = "{AWS_SECRET_ACCESS_KEY}"', f'DATABASE_URL = "{DB_URI}"'])
+    @pytest.mark.parametrize(
+        "text", [f'k = "{AWS_SECRET_ACCESS_KEY}"', f'DATABASE_URL = "{DB_URI}"']
+    )
     def test_no_rendering_contains_the_secret(self, text: str) -> None:
         for merged in self._merged(text):
             for rendering in (

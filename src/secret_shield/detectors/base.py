@@ -202,14 +202,20 @@ class Rule:
         _require_text(self.name, "name")
 
         if not isinstance(self.category, SecretCategory):
-            raise TypeError(f"category must be a SecretCategory, got {type(self.category).__name__}")
+            raise TypeError(
+                f"category must be a SecretCategory, got {type(self.category).__name__}"
+            )
         if not isinstance(self.severity, Severity):
-            raise TypeError(f"severity must be a Severity, got {type(self.severity).__name__}")
+            raise TypeError(
+                f"severity must be a Severity, got {type(self.severity).__name__}"
+            )
         if not isinstance(self.specificity, Specificity):
             raise TypeError(
                 f"specificity must be a Specificity, got {type(self.specificity).__name__}"
             )
-        if self.base_confidence is not None and not isinstance(self.base_confidence, Confidence):
+        if self.base_confidence is not None and not isinstance(
+            self.base_confidence, Confidence
+        ):
             raise TypeError(
                 f"base_confidence must be a Confidence or None, got {type(self.base_confidence).__name__}"
             )
@@ -225,19 +231,27 @@ class Rule:
 
         self._require_string_tuple(self.keywords, "keywords")
         self._require_string_tuple(self.placeholders, "placeholders")
-        _require_text(self.false_positive_notes, "false_positive_notes", allow_empty=True)
+        _require_text(
+            self.false_positive_notes, "false_positive_notes", allow_empty=True
+        )
         _require_text(self.remediation, "remediation", allow_empty=True)
         _require_text(self.pattern, "pattern")
 
         if not isinstance(self.mask_policy, MaskPolicy):
             raise TypeError("mask_policy must be a MaskPolicy")
         if self.min_entropy is not None:
-            if isinstance(self.min_entropy, bool) or not isinstance(self.min_entropy, (int, float)):
+            if isinstance(self.min_entropy, bool) or not isinstance(
+                self.min_entropy, (int, float)
+            ):
                 raise TypeError("min_entropy must be a number or None")
             if not 0.0 <= float(self.min_entropy) <= 8.0:
-                raise ValueError("min_entropy must be between 0.0 and 8.0 bits per character")
+                raise ValueError(
+                    "min_entropy must be between 0.0 and 8.0 bits per character"
+                )
         if self.max_length is not None:
-            if isinstance(self.max_length, bool) or not isinstance(self.max_length, int):
+            if isinstance(self.max_length, bool) or not isinstance(
+                self.max_length, int
+            ):
                 raise TypeError("max_length must be an int or None")
             if self.max_length < 1:
                 raise ValueError("max_length must be at least 1")
@@ -268,7 +282,9 @@ class Rule:
     @staticmethod
     def _require_string_tuple(values: object, name: str) -> None:
         if isinstance(values, str) or not isinstance(values, Iterable):
-            raise TypeError(f"{name} must be a tuple of strings, got {type(values).__name__}")
+            raise TypeError(
+                f"{name} must be a tuple of strings, got {type(values).__name__}"
+            )
         for value in values:
             _require_text(value, f"{name} entry")
 
@@ -505,7 +521,9 @@ class DetectorRegistry:
     def rules(self) -> tuple[Rule, ...]:
         """Every rule in deterministic evaluation order."""
 
-        return tuple(sorted(self._rules.values(), key=lambda rule: (rule.priority, rule.id)))
+        return tuple(
+            sorted(self._rules.values(), key=lambda rule: (rule.priority, rule.id))
+        )
 
     def ids(self) -> tuple[str, ...]:
         """Every registered id in evaluation order."""
@@ -598,7 +616,8 @@ def _present_keywords(rule: Rule, line: str) -> tuple[str, ...]:
     return tuple(
         stripped
         for keyword in rule.keywords
-        if (stripped := keyword.strip()) and normalize_for_matching(stripped) in haystack
+        if (stripped := keyword.strip())
+        and normalize_for_matching(stripped) in haystack
     )
 
 

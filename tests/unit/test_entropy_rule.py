@@ -24,7 +24,13 @@ from secret_shield.detectors.entropy_rule import (
 )
 from secret_shield.entropy import normalized_entropy, shannon_entropy
 from secret_shield.masking import REDACTION
-from secret_shield.models import Confidence, DetectorKind, SecretCategory, Severity, SourceKind
+from secret_shield.models import (
+    Confidence,
+    DetectorKind,
+    SecretCategory,
+    Severity,
+    SourceKind,
+)
 from secret_shield.tokenizer import candidates
 
 SYNTHETIC_TOKEN = "x8Kq2mNvR4pLzW7yB1cF3dH5jS6tG9uA0"
@@ -109,7 +115,9 @@ def test_two_words_are_still_a_candidate() -> None:
 
 
 def test_database_dsn_is_a_candidate() -> None:
-    assert evaluate("postgres://appuser:hunter2hunter2@db.internal:5432/prod") is not None
+    assert (
+        evaluate("postgres://appuser:hunter2hunter2@db.internal:5432/prod") is not None
+    )
 
 
 def test_natural_language_beyond_the_ceiling_is_ignored() -> None:

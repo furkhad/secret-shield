@@ -41,10 +41,20 @@ def _finding_to_dict(finding: Finding, *, include_fingerprint: bool) -> dict[str
     data: dict[str, Any] = {
         "rule_id": finding.rule_id,
         "rule_name": finding.rule_name,
-        "category": finding.category.value if hasattr(finding.category, "value") else str(finding.category),
+        "category": finding.category.value
+        if hasattr(finding.category, "value")
+        else str(finding.category),
         "severity": finding.severity.label,
-        "confidence": finding.confidence.value if hasattr(finding.confidence, "value") else str(finding.confidence),
-        "detector": finding.detector.label if hasattr(finding.detector, "label") else (finding.detector.value if hasattr(finding.detector, "value") else str(finding.detector)),
+        "confidence": finding.confidence.value
+        if hasattr(finding.confidence, "value")
+        else str(finding.confidence),
+        "detector": finding.detector.label
+        if hasattr(finding.detector, "label")
+        else (
+            finding.detector.value
+            if hasattr(finding.detector, "value")
+            else str(finding.detector)
+        ),
         "location": _location_to_dict(finding.location),
         "masked_value": finding.masked_value,
         "value_length": finding.value_length,
@@ -111,7 +121,10 @@ def render_json(result: ScanResult, *, include_fingerprint: bool = True) -> str:
             "findings_count": len(findings),
             "errors_count": len(errors),
         },
-        "findings": [_finding_to_dict(f, include_fingerprint=include_fingerprint) for f in findings],
+        "findings": [
+            _finding_to_dict(f, include_fingerprint=include_fingerprint)
+            for f in findings
+        ],
         "errors": [_error_to_dict(e) for e in errors],
     }
 

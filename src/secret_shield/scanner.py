@@ -73,8 +73,12 @@ class ScanConfig:
     fingerprint_key: bytes | None = None
 
     def __post_init__(self) -> None:
-        if isinstance(self.max_file_size, bool) or not isinstance(self.max_file_size, int):
-            raise TypeError(f"max_file_size must be an int, got {type(self.max_file_size).__name__}")
+        if isinstance(self.max_file_size, bool) or not isinstance(
+            self.max_file_size, int
+        ):
+            raise TypeError(
+                f"max_file_size must be an int, got {type(self.max_file_size).__name__}"
+            )
         if self.max_file_size < 1:
             raise ValueError("max_file_size must be at least 1")
         if not isinstance(self.entropy, EntropyRuleConfig):
@@ -100,7 +104,9 @@ DEFAULT_SCAN_CONFIG: Final[ScanConfig] = ScanConfig()
 def default_scan_config() -> ScanConfig:
     """Return a fresh copy of the default scan configuration."""
 
-    return ScanConfig(max_file_size=DEFAULT_MAX_FILE_SIZE, entropy=default_entropy_config())
+    return ScanConfig(
+        max_file_size=DEFAULT_MAX_FILE_SIZE, entropy=default_entropy_config()
+    )
 
 
 def scan_file(path: str | Path, config: ScanConfig | None = None) -> ScanResult:
@@ -163,17 +169,29 @@ def _read_text_file(
     """
 
     if not path.exists():
-        return None, 0, ScanError("file does not exist", path=str(path), code="not-found")
+        return (
+            None,
+            0,
+            ScanError("file does not exist", path=str(path), code="not-found"),
+        )
 
     try:
         if path.is_dir():
-            return None, 0, ScanError("path is a directory", path=str(path), code="is-directory")
+            return (
+                None,
+                0,
+                ScanError("path is a directory", path=str(path), code="is-directory"),
+            )
         size = path.stat().st_size
     except OSError as exc:
-        return None, 0, ScanError(
-            f"cannot read file metadata: {exc.strerror or exc.__class__.__name__}",
-            path=str(path),
-            code="stat-failed",
+        return (
+            None,
+            0,
+            ScanError(
+                f"cannot read file metadata: {exc.strerror or exc.__class__.__name__}",
+                path=str(path),
+                code="stat-failed",
+            ),
         )
 
     if size > config.max_file_size:
@@ -190,18 +208,26 @@ def _read_text_file(
     try:
         data = path.read_bytes()
     except OSError as exc:
-        return None, 0, ScanError(
-            f"cannot read file: {exc.strerror or exc.__class__.__name__}",
-            path=str(path),
-            code="read-failed",
+        return (
+            None,
+            0,
+            ScanError(
+                f"cannot read file: {exc.strerror or exc.__class__.__name__}",
+                path=str(path),
+                code="read-failed",
+            ),
         )
 
     if has_nul_byte(data[:BINARY_SNIFF_BYTES]):
-        return None, 0, ScanError(
-            "file looks binary (NUL byte in the first "
-            f"{BINARY_SNIFF_BYTES} bytes)",
-            path=str(path),
-            code="binary",
+        return (
+            None,
+            0,
+            ScanError(
+                "file looks binary (NUL byte in the first "
+                f"{BINARY_SNIFF_BYTES} bytes)",
+                path=str(path),
+                code="binary",
+            ),
         )
 
     try:

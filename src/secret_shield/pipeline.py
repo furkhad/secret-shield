@@ -228,7 +228,9 @@ class MergedMatch:
         if self.pattern is not None:
             return self.pattern.value
         if not self.entropy:
-            raise ValueError("a MergedMatch must carry a pattern match or entropy evidence")
+            raise ValueError(
+                "a MergedMatch must carry a pattern match or entropy evidence"
+            )
         return self.entropy[0].value
 
     @property
@@ -382,7 +384,10 @@ def fuse(
         # the result, so leaving it in whatever order the detector produced would
         # make two callers with the same evidence disagree.
         support = tuple(
-            sorted((entropy[position] for position in corroboration.get(index, ())), key=lambda c: c.span)
+            sorted(
+                (entropy[position] for position in corroboration.get(index, ())),
+                key=lambda c: c.span,
+            )
         )
         composite = bool(support)
         merged.append(
@@ -444,7 +449,9 @@ def describes_same_value(pattern: RawMatch, candidate: EntropyCandidate) -> bool
     pattern_span, candidate_span = pattern.span, candidate.span
     if not _overlaps(pattern_span, candidate_span):
         return False
-    if _contains(pattern_span, candidate_span) or _contains(candidate_span, pattern_span):
+    if _contains(pattern_span, candidate_span) or _contains(
+        candidate_span, pattern_span
+    ):
         return True
     return pattern.value in candidate.value or candidate.value in pattern.value
 

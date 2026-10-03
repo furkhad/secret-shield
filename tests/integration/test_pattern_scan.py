@@ -118,11 +118,17 @@ class TestPatternScanEndToEnd:
             assert finding.masked_value[0] == "*" or rule_id, rule_id
             assert line.strip(), f"{rule_id} points at an empty line"
 
-    def test_the_aws_secret_is_at_the_line_that_names_it(self, config_file: Path) -> None:
+    def test_the_aws_secret_is_at_the_line_that_names_it(
+        self, config_file: Path
+    ) -> None:
         finding = next(
-            f for f in scan_text(config_file).findings if f.rule_id == "aws-secret-access-key"
+            f
+            for f in scan_text(config_file).findings
+            if f.rule_id == "aws-secret-access-key"
         )
-        line = config_file.read_text(encoding="utf-8").splitlines()[finding.location.line - 1]
+        line = config_file.read_text(encoding="utf-8").splitlines()[
+            finding.location.line - 1
+        ]
 
         assert "aws_secret_access_key" in line
 
@@ -186,7 +192,9 @@ class TestPatternScanEndToEnd:
 
         assert scan_text(path).findings == ()
 
-    def test_a_documentation_file_full_of_placeholders_produces_nothing(self, tmp_path: Path) -> None:
+    def test_a_documentation_file_full_of_placeholders_produces_nothing(
+        self, tmp_path: Path
+    ) -> None:
         """The single most common source of findings in a fresh repository."""
 
         path = tmp_path / ".env.example"
@@ -201,12 +209,16 @@ class TestPatternScanEndToEnd:
 
         assert scan_text(path).findings == ()
 
-    def test_a_file_is_read_as_text_regardless_of_its_suffix(self, tmp_path: Path) -> None:
+    def test_a_file_is_read_as_text_regardless_of_its_suffix(
+        self, tmp_path: Path
+    ) -> None:
         """Extension-based filtering is Stage 3's job, and it must not be
         needed for correctness: a secret in ``notes.txt`` is still a secret."""
 
         path = tmp_path / "notes.txt"
-        path.write_text(f'aws_access_key_id = "{fx.AWS_ACCESS_KEY_ID}"\n', encoding="utf-8")
+        path.write_text(
+            f'aws_access_key_id = "{fx.AWS_ACCESS_KEY_ID}"\n', encoding="utf-8"
+        )
 
         assert [f.rule_id for f in scan_text(path).findings] == ["aws-access-key-id"]
 
@@ -244,17 +256,24 @@ class TestScanSeverityAndConfidence:
         assert list(counts) == sorted(counts)
         assert counts["aws"] == 2
 
-    def test_the_private_key_is_found_at_its_first_line(self, config_file: Path) -> None:
+    def test_the_private_key_is_found_at_its_first_line(
+        self, config_file: Path
+    ) -> None:
         """The PEM block spans lines, so its column arithmetic is the hardest
         case in the catalog and is worth asserting on directly.
         """
 
         text = config_file.read_text(encoding="utf-8")
         finding = next(
-            f for f in scan_text(config_file).findings if f.rule_id == "private-key-block"
+            f
+            for f in scan_text(config_file).findings
+            if f.rule_id == "private-key-block"
         )
 
-        assert finding.location.line == text[: text.index(fx.PRIVATE_KEY_BLOCK)].count("\n") + 1
+        assert (
+            finding.location.line
+            == text[: text.index(fx.PRIVATE_KEY_BLOCK)].count("\n") + 1
+        )
         assert finding.location.column == 1
 
 
@@ -306,7 +325,9 @@ class TestSelfScan:
         """
 
         root = Path(__file__).resolve().parent.parent
-        matches = find_matches((root / "vendor_fixtures.py").read_text(encoding="utf-8"))
+        matches = find_matches(
+            (root / "vendor_fixtures.py").read_text(encoding="utf-8")
+        )
 
         assert {m.id for m in matches} >= {
             "aws-access-key-id",

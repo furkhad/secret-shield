@@ -116,7 +116,6 @@ from .exit_codes import (
     EXIT_SCAN_ERROR,
     EXIT_SUCCESS,
     EXIT_USAGE,
-    describe_exit_code,
 )
 from .filters.paths import default_path_filter_config
 from .masking import strip_control_characters
@@ -125,7 +124,11 @@ from .report import render_json, render_markdown, render_text
 from .scanner import ScanConfig
 from .sources import GitScanConfig, HistoryScan, PathScanConfig, scan_history, scan_path
 from .sources.git_cmd import MAX_TIMEOUT_SECONDS, MIN_TIMEOUT_SECONDS
-from .sources.git_history import DEFAULT_MAX_BLOBS, DEFAULT_MAX_BLOB_SIZE, DEFAULT_MAX_REFS
+from .sources.git_history import (
+    DEFAULT_MAX_BLOBS,
+    DEFAULT_MAX_BLOB_SIZE,
+    DEFAULT_MAX_REFS,
+)
 
 __all__ = [
     "FINGERPRINT_KEY_ENV",
@@ -181,7 +184,9 @@ A scanner that finds something and exits 0 is a scanner CI learns to ignore.
 way to keep the noise down.
 """
 
-CONFIDENCE_CHOICES: Final[tuple[str, ...]] = tuple(confidence.label for confidence in Confidence)
+CONFIDENCE_CHOICES: Final[tuple[str, ...]] = tuple(
+    confidence.label for confidence in Confidence
+)
 """``--min-confidence`` accepts every confidence label."""
 
 _STRICT_INTEGER: Final[re.Pattern[str]] = re.compile(r"[+-]?[0-9]+")
@@ -256,7 +261,9 @@ def _integer(text: str) -> int:
     if not _STRICT_INTEGER.fullmatch(text):
         # repr() rather than the bare value: it escapes control characters, so a
         # crafted argument cannot forge a line in the usage message.
-        raise argparse.ArgumentTypeError(f"{text!r} is not a base-10 integer such as '4096'")
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a base-10 integer such as '4096'"
+        )
     return int(text)
 
 
@@ -268,7 +275,9 @@ def _positive(text: str) -> str:
     return text
 
 
-_STRICT_DECIMAL: Final[re.Pattern[str]] = re.compile(r"[+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
+_STRICT_DECIMAL: Final[re.Pattern[str]] = re.compile(
+    r"[+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+)
 """The only decimal spellings accepted for a seconds value.
 
 Same reasoning as :data:`_STRICT_INTEGER`: ``float()`` would also accept
@@ -294,7 +303,9 @@ def _positive_float(text: str) -> float:
     """
 
     if not _STRICT_DECIMAL.fullmatch(text):
-        raise argparse.ArgumentTypeError(f"{text!r} is not a number of seconds such as '30'")
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a number of seconds such as '30'"
+        )
     value = float(text)
     if value != value or value in (float("inf"), float("-inf")):
         raise argparse.ArgumentTypeError("seconds must be a finite number")
@@ -657,7 +668,9 @@ def _add_rules_parser(commands: Any) -> None:
         help="inspect the detection rules that are registered",
         description="Inspect the rules SecretShield applies.",
     )
-    rules_commands = rules.add_subparsers(dest="rules_command", metavar="ACTION", required=True)
+    rules_commands = rules.add_subparsers(
+        dest="rules_command", metavar="ACTION", required=True
+    )
 
     listing = rules_commands.add_parser(
         "list",
@@ -670,7 +683,7 @@ def _add_rules_parser(commands: Any) -> None:
         ),
         epilog=(
             "Rules are disabled through configuration, not through a flag: put "
-            "rules.disabled = [\"<rule-id>\"] in .secretshield.toml. "
+            'rules.disabled = ["<rule-id>"] in .secretshield.toml. '
             "This listing always describes the shipped catalog.\n\n" + _EPILOG
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -800,7 +813,9 @@ def _resolve_fingerprint(args: argparse.Namespace) -> tuple[bytes | None, bool]:
     return raw.encode("utf-8"), True
 
 
-def _apply_fingerprint_key(settings: PathScanConfig, key: bytes | None) -> PathScanConfig:
+def _apply_fingerprint_key(
+    settings: PathScanConfig, key: bytes | None
+) -> PathScanConfig:
     """Return ``settings`` with ``key`` installed, or unchanged for ``None``.
 
     ``ScanConfig`` validates the key's type and emptiness, so an unusable one
@@ -810,7 +825,9 @@ def _apply_fingerprint_key(settings: PathScanConfig, key: bytes | None) -> PathS
 
     if key is None:
         return settings
-    return dataclasses.replace(settings, scan=dataclasses.replace(settings.scan, fingerprint_key=key))
+    return dataclasses.replace(
+        settings, scan=dataclasses.replace(settings.scan, fingerprint_key=key)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -965,7 +982,9 @@ def _apply_min_confidence(result: ScanResult, threshold: Confidence) -> ScanResu
     check.
     """
 
-    kept = tuple(finding for finding in result.findings if finding.confidence >= threshold)
+    kept = tuple(
+        finding for finding in result.findings if finding.confidence >= threshold
+    )
     if len(kept) == len(result.findings):
         return result
     return dataclasses.replace(result, findings=kept)
@@ -1139,7 +1158,9 @@ def _git_scan_config(
 
     return GitScanConfig(
         scan=scan,
-        path_filters=default_path_filter_config() if args.respect_path_filters else None,
+        path_filters=default_path_filter_config()
+        if args.respect_path_filters
+        else None,
         **chosen,  # type: ignore[arg-type]
     )
 
@@ -1162,7 +1183,9 @@ def _report_history_coverage(scan: HistoryScan) -> None:
 
     notes: list[str] = []
     if scan.truncated:
-        notes.append("history NOT examined in full (" + "; ".join(scan.truncated_because) + ")")
+        notes.append(
+            "history NOT examined in full (" + "; ".join(scan.truncated_because) + ")"
+        )
     if scan.paths_filtered:
         notes.append(f"{scan.paths_filtered} path(s) skipped by --respect-path-filters")
     if scan.blobs_binary:
@@ -1315,7 +1338,11 @@ def _render_rules_text(entries: Sequence[dict[str, str]]) -> str:
         lines.append(_field("base confidence", entry["base_confidence"]))
         lines.append(_field("specificity", entry["specificity"]))
         lines.append(_field("detector", entry["detector"]))
-        lines.append(_field("false positives", entry["false_positive_notes"] or "(none recorded)"))
+        lines.append(
+            _field(
+                "false positives", entry["false_positive_notes"] or "(none recorded)"
+            )
+        )
         lines.append(_field("remediation", entry["remediation"] or "(none recorded)"))
         lines.append("")
     lines.append(

@@ -24,7 +24,9 @@ def make_finding(**kwargs) -> Finding:
         "severity": Severity.MEDIUM,
         "confidence": 0.9,
         "detector": DetectorKind.PATTERN,
-        "location": Location(path="test.py", line=1, column=1, source_kind=SourceKind.FILE),
+        "location": Location(
+            path="test.py", line=1, column=1, source_kind=SourceKind.FILE
+        ),
         "masked_value": "****",
         "value_length": 4,
         "value_fingerprint": "abc123def456",
@@ -87,8 +89,14 @@ def test_deterministic_key_order() -> None:
 
 
 def test_multiple_findings_ordered() -> None:
-    f1 = make_finding(rule_id="b", location=Location(path="b.py", line=2, column=1, source_kind=SourceKind.FILE))
-    f2 = make_finding(rule_id="a", location=Location(path="a.py", line=1, column=1, source_kind=SourceKind.FILE))
+    f1 = make_finding(
+        rule_id="b",
+        location=Location(path="b.py", line=2, column=1, source_kind=SourceKind.FILE),
+    )
+    f2 = make_finding(
+        rule_id="a",
+        location=Location(path="a.py", line=1, column=1, source_kind=SourceKind.FILE),
+    )
     result = ScanResult(
         findings=(f1, f2),
         errors=(),

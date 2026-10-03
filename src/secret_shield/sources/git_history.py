@@ -283,15 +283,23 @@ class GitScanConfig:
 
     def __post_init__(self) -> None:
         if not isinstance(self.scan, ScanConfig):
-            raise TypeError(f"scan must be a ScanConfig, got {type(self.scan).__name__}")
+            raise TypeError(
+                f"scan must be a ScanConfig, got {type(self.scan).__name__}"
+            )
         if not isinstance(self.binary, BinaryConfig):
-            raise TypeError(f"binary must be a BinaryConfig, got {type(self.binary).__name__}")
-        if self.path_filters is not None and not isinstance(self.path_filters, PathFilterConfig):
+            raise TypeError(
+                f"binary must be a BinaryConfig, got {type(self.binary).__name__}"
+            )
+        if self.path_filters is not None and not isinstance(
+            self.path_filters, PathFilterConfig
+        ):
             raise TypeError(
                 "path_filters must be a PathFilterConfig or None, got "
                 f"{type(self.path_filters).__name__}"
             )
-        if self.registry is not None and not isinstance(self.registry, DetectorRegistry):
+        if self.registry is not None and not isinstance(
+            self.registry, DetectorRegistry
+        ):
             raise TypeError(
                 f"registry must be a DetectorRegistry or None, got {type(self.registry).__name__}"
             )
@@ -301,7 +309,9 @@ class GitScanConfig:
         _require_optional_positive(self.max_refs, "max_refs")
         _require_optional_positive(self.max_blob_size, "max_blob_size")
         if isinstance(self.timeout, bool) or not isinstance(self.timeout, (int, float)):
-            raise TypeError(f"timeout must be a number, got {type(self.timeout).__name__}")
+            raise TypeError(
+                f"timeout must be a number, got {type(self.timeout).__name__}"
+            )
         if self.timeout <= 0:
             raise ValueError("timeout must be positive")
         # Checked here as well as inside ``git_cmd`` so a hand-built config fails
@@ -510,7 +520,9 @@ def scan_history(
 def _scan_repository(repo: Path, config: GitScanConfig, started: float) -> HistoryScan:
     """Index the history, read the distinct blobs, scan each one exactly once."""
 
-    index, walk_commits, walk_truncated, reasons, filtered = _index_history(repo, config)
+    index, walk_commits, walk_truncated, reasons, filtered = _index_history(
+        repo, config
+    )
 
     blobs_binary = 0
     blobs_too_large = 0
@@ -566,7 +578,9 @@ def _scan_repository(repo: Path, config: GitScanConfig, started: float) -> Histo
         # A bounded prefix, exactly as the filesystem source classifies a file.
         # Deciding on the whole blob would cost as much as reading it, which is
         # the thing the size limit exists to avoid.
-        if classify_bytes(data[: config.binary.max_sniff_bytes], config.binary).is_binary:
+        if classify_bytes(
+            data[: config.binary.max_sniff_bytes], config.binary
+        ).is_binary:
             blobs_binary += 1
             continue
 
@@ -662,7 +676,9 @@ def _index_history(
             reasons.add("a path in the history was too long to report at")
             continue
 
-        if config.path_filters is not None and not _path_allowed(config.path_filters, path):
+        if config.path_filters is not None and not _path_allowed(
+            config.path_filters, path
+        ):
             paths_filtered += 1
             continue
 
@@ -681,7 +697,9 @@ def _index_history(
             # one. Git's order made that decision, not a comparison here.
             continue
         if max_refs is not None and refs_used >= max_refs:
-            reasons.add(f"the history has more than {max_refs} distinct path references")
+            reasons.add(
+                f"the history has more than {max_refs} distinct path references"
+            )
             continue
         refs_used += 1
         bucket[path] = dataclasses.replace(reference, path=path)
@@ -779,7 +797,9 @@ def _read_headers(
     return headers
 
 
-def _read_payloads(repo: Path, names: list[str], config: GitScanConfig) -> dict[str, bytes]:
+def _read_payloads(
+    repo: Path, names: list[str], config: GitScanConfig
+) -> dict[str, bytes]:
     """Return the contents of each named blob, read once each.
 
     ``max_payload`` is passed as well, so ``git_cmd`` keeps its own memory
@@ -804,7 +824,9 @@ def _read_payloads(repo: Path, names: list[str], config: GitScanConfig) -> dict[
 # ---------------------------------------------------------------------------
 
 
-def _analyze_blob(data: bytes, record: BlobRecord, config: GitScanConfig) -> FileOutcome:
+def _analyze_blob(
+    data: bytes, record: BlobRecord, config: GitScanConfig
+) -> FileOutcome:
     """Scan one blob's bytes once, then attribute the findings to every path.
 
     The content is analysed exactly once no matter how many paths or commits it
@@ -866,7 +888,9 @@ def _analyze_blob(data: bytes, record: BlobRecord, config: GitScanConfig) -> Fil
             ),
         )
 
-    return FileOutcome(findings=tuple(findings), errors=errors, size=len(data), analyzed=True)
+    return FileOutcome(
+        findings=tuple(findings), errors=errors, size=len(data), analyzed=True
+    )
 
 
 def _analyze_unfused(

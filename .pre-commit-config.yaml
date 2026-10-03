@@ -1,0 +1,94 @@
+# Pre-commit hooks for SecretShield
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Ruff: fast Python linter and formatter (replaces flake8, black, isort, etc.)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # MyPy: static type checking (strict mode)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        args: [--strict, src/secret_shield]
+        additional_dependencies: [types-toml]
+        types_or: [python, pyi]
+        # Skip if mypy not installed in environment (optional)
+        # stages: [commit]
+
+  # Generic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        args: [--unsafe]  # allow loading all YAML (we control the files)
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: detect-private-key
+        exclude: ^tests/
+      - id: forbid-new-submodules
+
+  # SecretShield self-scan: prevent committing real credentials
+  # Runs on staged files only (fast)
+  - repo: local
+    hooks:
+      - id: secretshield-staged
+        name: SecretShield staged files scan
+        entry: python scripts/precommit_scan.py
+        language: system
+        types_or: [python, toml, json, yaml, sh, bash, dockerfile]
+        stages: [commit]
+        verbose: true
+
+  # Full repo scan on push (slower, runs in CI anyway)
+  - repo: local
+    hooks:
+      - id: secretshield-full
+        name: SecretShield full repo scan (push only)
+        entry: python scripts/precommit_full_scan.py
+        language: system
+        types_or: [python, toml, json, yaml, sh, bash, dockerfile]
+        stages: [push]
+        verbose: true
+
+  # Ensure pyproject.toml is valid and has required fields
+  - repo: local
+    hooks:
+      - id: pyproject-check
+        name: Validate pyproject.toml
+        entry: python scripts/validate_pyproject.py
+        language: system
+        files: ^pyproject\.toml$
+        stages: [commit]
+
+  # Ensure README.md is not empty
+  - repo: local
+    hooks:
+      - id: readme-check
+        name: Validate README.md
+        entry: bash -c 'test -s README.md && echo "README.md OK"'
+        language: system
+        files: ^README\.md$
+        stages: [commit]
+
+# Configuration
+default_stages: [commit]
+fail_fast: false

@@ -226,15 +226,15 @@ _PLACEHOLDER_SUBSTRINGS: Final[tuple[str, ...]] = (
 #: to be worth the catch, and it is asserted as a known trade-off in
 #: ``test_context.py``.
 _TEMPLATE_PAIRS: Final[tuple[tuple[str, str], ...]] = (
-    ("${", "}"),      # shell, Terraform, JavaScript template literals
-    ("{{", "}}"),     # Jinja, Handlebars, Mustache
-    ("<%", "%>"),      # ERB, ASP
-    ("@{", "}"),      # ASP.NET Razor
-    ("$(", ")"),      # shell command substitution
-    ("{%", "%}"),      # Jinja and Liquid statements
-    ("%(", ")"),      # printf substitution
-    ("%(", "s"),      # printf with a trailing type code, as in %(name)s
-    ("%", "%"),      # Windows batch expansion, as in %DB_PASSWORD%
+    ("${", "}"),  # shell, Terraform, JavaScript template literals
+    ("{{", "}}"),  # Jinja, Handlebars, Mustache
+    ("<%", "%>"),  # ERB, ASP
+    ("@{", "}"),  # ASP.NET Razor
+    ("$(", ")"),  # shell command substitution
+    ("{%", "%}"),  # Jinja and Liquid statements
+    ("%(", ")"),  # printf substitution
+    ("%(", "s"),  # printf with a trailing type code, as in %(name)s
+    ("%", "%"),  # Windows batch expansion, as in %DB_PASSWORD%
 )
 
 _HEX_PATTERN: Final[re.Pattern[str]] = re.compile(r"\A[0-9a-fA-F]+\Z")
@@ -259,7 +259,9 @@ def normalize_for_matching(text: str) -> str:
     """
 
     if not isinstance(text, str):
-        raise TypeError(f"normalize_for_matching() expects str, got {type(text).__name__}")
+        raise TypeError(
+            f"normalize_for_matching() expects str, got {type(text).__name__}"
+        )
     return _SEPARATOR_PATTERN.sub("", text.lower())
 
 
@@ -426,7 +428,9 @@ def is_template_expression(value: str) -> bool:
     """
 
     if not isinstance(value, str):
-        raise TypeError(f"is_template_expression() expects str, got {type(value).__name__}")
+        raise TypeError(
+            f"is_template_expression() expects str, got {type(value).__name__}"
+        )
 
     trimmed = value.strip()
     for opening, closing in _TEMPLATE_PAIRS:

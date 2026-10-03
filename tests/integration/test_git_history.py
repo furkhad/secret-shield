@@ -43,7 +43,9 @@ LEAKED_VALUES = (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, GITHUB_OAUTH_TOKEN)
 
 def _git_is_available() -> bool:
     try:
-        subprocess.run(["git", "--version"], capture_output=True, timeout=30, check=False)
+        subprocess.run(
+            ["git", "--version"], capture_output=True, timeout=30, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return False
     return True
@@ -211,7 +213,9 @@ def commit_tree_with_path(repo: Path, path: str, content: str) -> None:
     if completed.returncode != 0:
         raise AssertionError(f"git update-index failed: {completed.stderr}")
     tree = run_git(repo, "write-tree").strip()
-    commit = run_git(repo, "commit-tree", tree, "-m", "a path no filesystem would accept").strip()
+    commit = run_git(
+        repo, "commit-tree", tree, "-m", "a path no filesystem would accept"
+    ).strip()
     run_git(repo, "update-ref", "refs/heads/main", commit)
 
 
@@ -258,7 +262,9 @@ class TestTheDeletedSecret:
         assert "aws-access-key-id" in rule_ids(scan)
         assert "aws-secret-access-key" in rule_ids(scan)
 
-    def test_the_finding_names_the_deleted_path(self, deleted_secret_repo: Repo) -> None:
+    def test_the_finding_names_the_deleted_path(
+        self, deleted_secret_repo: Repo
+    ) -> None:
         scan = scan_history(deleted_secret_repo.path)
 
         assert {finding.location.path for finding in scan.findings} == {"gone.py"}
@@ -275,7 +281,9 @@ class TestTheDeletedSecret:
     def test_the_finding_carries_a_commit_time(self, deleted_secret_repo: Repo) -> None:
         scan = scan_history(deleted_secret_repo.path)
 
-        assert all(finding.location.commit_time is not None for finding in scan.findings)
+        assert all(
+            finding.location.commit_time is not None for finding in scan.findings
+        )
         # The fixture pins every commit to one timestamp.
         assert {finding.location.commit_time for finding in scan.findings} == {
             1_704_067_200
@@ -335,15 +343,11 @@ class TestTheDeletedSecret:
         """A HEAD reflog entry would be proof that something wrote to the repo."""
 
         repo = deleted_secret_repo.path
-        before = sorted(
-            path.name for path in (repo / ".git" / "logs").rglob("*")
-        )
+        before = sorted(path.name for path in (repo / ".git" / "logs").rglob("*"))
 
         scan_history(repo)
 
-        after = sorted(
-            path.name for path in (repo / ".git" / "logs").rglob("*")
-        )
+        after = sorted(path.name for path in (repo / ".git" / "logs").rglob("*"))
         assert after == before
 
     def test_it_is_repeatable(self, deleted_secret_repo: Repo) -> None:
@@ -357,7 +361,9 @@ class TestTheDeletedSecret:
         assert first.blobs_scanned == second.blobs_scanned
         assert first.commits == second.commits
 
-    def test_a_subdirectory_of_a_repository_works(self, deleted_secret_repo: Repo) -> None:
+    def test_a_subdirectory_of_a_repository_works(
+        self, deleted_secret_repo: Repo
+    ) -> None:
         """Git resolves a subdirectory, and so must this."""
 
         repo = deleted_secret_repo.path
@@ -413,7 +419,9 @@ class TestDeduplication:
         assert scan.blobs_seen == 2
         assert scan.blobs_scanned == 2
 
-    def test_a_blob_seen_in_two_commits_is_one_finding(self, reverted_repo: Repo) -> None:
+    def test_a_blob_seen_in_two_commits_is_one_finding(
+        self, reverted_repo: Repo
+    ) -> None:
         scan = scan_history(reverted_repo.path)
 
         assert len(scan.findings) == 2, "one per distinct blob"
@@ -518,7 +526,9 @@ class TestLimits:
     def test_a_commit_limit_stops_the_walk_and_says_so(self, tmp_path: Path) -> None:
         repo = init_repo(tmp_path / "many-commits")
         for index in range(5):
-            (repo / f"file{index}.txt").write_text(f"content {index}\n", encoding="utf-8")
+            (repo / f"file{index}.txt").write_text(
+                f"content {index}\n", encoding="utf-8"
+            )
             commit_all(repo, f"commit {index}")
 
         scan = scan_history(repo, GitScanConfig(max_commits=2))
@@ -546,7 +556,9 @@ class TestLimits:
         )
         leaky = commit_all(repo, "the leaky one")
         for index in range(3):
-            (repo / f"new{index}.txt").write_text(f"nothing {index}\n", encoding="utf-8")
+            (repo / f"new{index}.txt").write_text(
+                f"nothing {index}\n", encoding="utf-8"
+            )
             commit_all(repo, f"later {index}")
 
         scan = scan_history(repo, GitScanConfig(max_commits=1))
@@ -555,7 +567,9 @@ class TestLimits:
         assert "history-truncated" in codes(scan)
         assert leaky != run_git(repo, "rev-parse", "HEAD").strip()
 
-    def test_a_blob_over_the_size_limit_is_counted_not_read(self, tmp_path: Path) -> None:
+    def test_a_blob_over_the_size_limit_is_counted_not_read(
+        self, tmp_path: Path
+    ) -> None:
         repo = init_repo(tmp_path / "huge")
         (repo / "huge.txt").write_text("x" * (512 * 1024), encoding="utf-8")
         (repo / "small.txt").write_text("fine\n", encoding="utf-8")
@@ -567,7 +581,9 @@ class TestLimits:
         assert scan.blobs_scanned == 1
         assert scan.result.bytes_scanned < 512 * 1024
 
-    def test_a_secret_in_a_huge_blob_is_declared_not_reported(self, tmp_path: Path) -> None:
+    def test_a_secret_in_a_huge_blob_is_declared_not_reported(
+        self, tmp_path: Path
+    ) -> None:
         """The point of the bound: the caller must be able to tell."""
 
         repo = init_repo(tmp_path / "huge-secret")
@@ -593,9 +609,13 @@ class TestLimits:
 
         assert scan.blobs_binary == 1
         assert scan.blobs_scanned == 1
-        assert scan.result.errors == (), "skipping a binary is a decision, not a failure"
+        assert (
+            scan.result.errors == ()
+        ), "skipping a binary is a decision, not a failure"
 
-    def test_a_secret_masquerading_as_binary_is_not_reported(self, tmp_path: Path) -> None:
+    def test_a_secret_masquerading_as_binary_is_not_reported(
+        self, tmp_path: Path
+    ) -> None:
         """A NUL byte is enough. The boundary is binary, not plausible."""
 
         repo = init_repo(tmp_path / "fake-binary")
@@ -669,7 +689,9 @@ class TestLimits:
 
 @needs_git
 class TestRepositoryControlledPaths:
-    def test_a_path_with_spaces_and_quotes_is_reported_verbatim(self, tmp_path: Path) -> None:
+    def test_a_path_with_spaces_and_quotes_is_reported_verbatim(
+        self, tmp_path: Path
+    ) -> None:
         repo = init_repo(tmp_path / "awkward")
         name = "dir with space/it's here.env"
         path = repo / name
@@ -695,7 +717,9 @@ class TestRepositoryControlledPaths:
 
         assert [finding.location.path for finding in scan.findings] == [name]
 
-    def test_a_rename_with_a_quote_and_a_space_round_trips(self, tmp_path: Path) -> None:
+    def test_a_rename_with_a_quote_and_a_space_round_trips(
+        self, tmp_path: Path
+    ) -> None:
         repo = init_repo(tmp_path / "rename-awkward")
         (repo / "a b.env").write_text(f'k="{AWS_ACCESS_KEY_ID}"\n', encoding="utf-8")
         first = commit_all(repo, "first")
@@ -795,7 +819,9 @@ class TestRepositoryControlledPaths:
         assert scan.findings == ()
         assert scan.truncated is True
         assert "history-truncated" in codes(scan)
-        assert scan.truncated_because == ("a path in the history was too long to report at",)
+        assert scan.truncated_because == (
+            "a path in the history was too long to report at",
+        )
 
     def test_a_path_just_under_the_limit_is_reported(self, tmp_path: Path) -> None:
         repo = init_repo(tmp_path / "long-enough")
@@ -907,7 +933,9 @@ class TestFailures:
         repo = init_repo(tmp_path / "damaged")
         (repo / "a.txt").write_text("clean\n", encoding="utf-8")
         commit_all(repo, "first")
-        blobs = [name for name, kind in loose_object_names(repo).items() if kind == "blob"]
+        blobs = [
+            name for name, kind in loose_object_names(repo).items() if kind == "blob"
+        ]
         assert corrupt_loose_object(repo, blobs[0]) is True
 
         scan = scan_history(repo)
@@ -926,22 +954,28 @@ class TestFailures:
         (repo / "clean.txt").write_text("nothing here\n", encoding="utf-8")
         (repo / "good.env").write_text(f'k="{AWS_ACCESS_KEY_ID}"\n', encoding="utf-8")
         commit_all(repo, "first")
-        blobs = [name for name, kind in loose_object_names(repo).items() if kind == "blob"]
-        doomed = next(name for name in blobs if run_git(repo, "cat-file", "-p", name) == "nothing here\n")
+        blobs = [
+            name for name, kind in loose_object_names(repo).items() if kind == "blob"
+        ]
+        doomed = next(
+            name
+            for name in blobs
+            if run_git(repo, "cat-file", "-p", name) == "nothing here\n"
+        )
         assert corrupt_loose_object(repo, doomed) is True
 
         scan = scan_history(repo)
 
         assert "object-unreadable" in codes(scan)
-        assert "aws-access-key-id" in rule_ids(scan), "the readable blob was still scanned"
+        assert "aws-access-key-id" in rule_ids(
+            scan
+        ), "the readable blob was still scanned"
         assert scan.blobs_scanned == 1
 
     def test_no_error_message_ever_contains_a_credential(
         self, deleted_secret_repo: Repo
     ) -> None:
-        scan = scan_history(
-            deleted_secret_repo.path, GitScanConfig(max_commits=1)
-        )
+        scan = scan_history(deleted_secret_repo.path, GitScanConfig(max_commits=1))
 
         for error in scan.result.errors:
             assert isinstance(error, ScanError)
@@ -1047,7 +1081,10 @@ class TestTheResult:
         scan = scan_history(repo)
 
         assert scan.blobs_seen == 3
-        assert scan.blobs_scanned + scan.blobs_binary + scan.blobs_too_large == scan.blobs_seen
+        assert (
+            scan.blobs_scanned + scan.blobs_binary + scan.blobs_too_large
+            == scan.blobs_seen
+        )
 
     def test_findings_are_sorted_deterministically(self, tmp_path: Path) -> None:
         repo = init_repo(tmp_path / "sorted")

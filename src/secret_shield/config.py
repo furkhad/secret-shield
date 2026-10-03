@@ -217,7 +217,9 @@ class ConfigError(Exception):
         super().__init__(strip_control_characters(message))
         self.layer = layer
         self.key = key
-        self.location = strip_control_characters(location) if location is not None else None
+        self.location = (
+            strip_control_characters(location) if location is not None else None
+        )
 
     def __repr__(self) -> str:
         return f"ConfigError({str(self)!r}, layer={self.layer!r}, key={self.key!r})"
@@ -318,11 +320,15 @@ class Setting:
         # down the file would raise NameError on import. That has bitten this
         # codebase before.
         if not isinstance(self.section, str) or not self.section.isidentifier():
-            raise ValueError(f"setting section must be an identifier, got {self.section!r}")
+            raise ValueError(
+                f"setting section must be an identifier, got {self.section!r}"
+            )
         if not isinstance(self.name, str) or not self.name.isidentifier():
             raise ValueError(f"setting name must be an identifier, got {self.name!r}")
         if not isinstance(self.kind, SettingKind):
-            raise TypeError(f"setting kind must be a SettingKind, got {type(self.kind).__name__}")
+            raise TypeError(
+                f"setting kind must be a SettingKind, got {type(self.kind).__name__}"
+            )
         if not isinstance(self.help, str) or not self.help.strip():
             raise ValueError(f"setting {self.name} needs a help string")
         if self.minimum is not None and self.maximum is not None:
@@ -498,7 +504,9 @@ SETTINGS: Final[tuple[Setting, ...]] = (
 _ALL_KEYS: Final[tuple[str, ...]] = tuple(setting.key for setting in SETTINGS)
 
 
-def _build_indexes(settings: Iterable[Setting]) -> tuple[dict[str, Setting], dict[str, Setting]]:
+def _build_indexes(
+    settings: Iterable[Setting],
+) -> tuple[dict[str, Setting], dict[str, Setting]]:
     """Return the by-key and by-environment-variable indexes for ``settings``.
 
     A repeated leaf name is a programming error in this module rather than a
@@ -680,7 +688,9 @@ def _check_range(
         )
 
 
-def _parse_severity(text: str, *, setting: Setting, layer: ConfigLayer, location: str) -> Severity:
+def _parse_severity(
+    text: str, *, setting: Setting, layer: ConfigLayer, location: str
+) -> Severity:
     """Parse a severity label, reporting any failure as a :class:`ConfigError`."""
 
     try:
@@ -742,7 +752,10 @@ def _coerce_mapping_value(
             return None
         # bool before int: bool is a subclass of int, and True is not a size.
         if isinstance(raw, bool) or not isinstance(raw, int):
-            raise fail("an integer" if kind is SettingKind.INTEGER else "an integer or null", raw)
+            raise fail(
+                "an integer" if kind is SettingKind.INTEGER else "an integer or null",
+                raw,
+            )
         _check_range(setting, float(raw), layer=layer, location=location)
         # Extra validation for jobs
         if setting.key == "scan.jobs" and raw > 64:
@@ -769,7 +782,9 @@ def _coerce_mapping_value(
         return number
 
     # STRING_LIST
-    if isinstance(raw, (str, bytes, bytearray, Mapping)) or not isinstance(raw, Sequence):
+    if isinstance(raw, (str, bytes, bytearray, Mapping)) or not isinstance(
+        raw, Sequence
+    ):
         raise fail("a list of strings", raw)
     items: list[str] = []
     for entry in raw:
@@ -952,7 +967,9 @@ def _read_text(path: Path, *, layer: ConfigLayer) -> str | None:
     return text.removeprefix("﻿")
 
 
-def _toml_table(text: str, *, path: Path, layer: ConfigLayer, section: tuple[str, ...]) -> object:
+def _toml_table(
+    text: str, *, path: Path, layer: ConfigLayer, section: tuple[str, ...]
+) -> object:
     """Parse TOML and return the sub-table at ``section``.
 
     ``section`` is empty for a standalone file. A missing intermediate table is
@@ -1000,7 +1017,9 @@ def _json_table(text: str, *, path: Path, layer: ConfigLayer) -> object:
         ) from None
 
 
-def _require_table(value: object, *, path: Path, layer: ConfigLayer) -> Mapping[str, object]:
+def _require_table(
+    value: object, *, path: Path, layer: ConfigLayer
+) -> Mapping[str, object]:
     """Return ``value`` if it is a mapping, else raise."""
 
     if isinstance(value, Mapping):
@@ -1111,18 +1130,26 @@ def _read_mapping_layer(
             return None
         table = _require_table(found, path=path, layer=layer)
     elif layer is ConfigLayer.JSON:
-        table = _require_table(_json_table(text, path=path, layer=layer), path=path, layer=layer)
+        table = _require_table(
+            _json_table(text, path=path, layer=layer), path=path, layer=layer
+        )
     else:
         table = _require_table(
-            _toml_table(text, path=path, layer=layer, section=()), path=path, layer=layer
+            _toml_table(text, path=path, layer=layer, section=()),
+            path=path,
+            layer=layer,
         )
 
     flat = _flatten(table, layer=layer, location=path.name)
     validated = {
-        key: _coerce_mapping_value(_SETTINGS_BY_KEY[key], value, layer=layer, location=path.name)
+        key: _coerce_mapping_value(
+            _SETTINGS_BY_KEY[key], value, layer=layer, location=path.name
+        )
         for key, value in flat.items()
     }
-    return validated, ConfigOrigin(layer=layer, location=path.name, keys=tuple(sorted(validated)))
+    return validated, ConfigOrigin(
+        layer=layer, location=path.name, keys=tuple(sorted(validated))
+    )
 
 
 def _read_environment_layer(
@@ -1175,13 +1202,14 @@ def _read_overrides_layer(
     """Read the caller's explicit overrides."""
 
     if not isinstance(overrides, Mapping):
-        raise TypeError(
-            f"overrides must be a Mapping, got {type(overrides).__name__}"
-        )
+        raise TypeError(f"overrides must be a Mapping, got {type(overrides).__name__}")
     flat = _flatten(overrides, layer=ConfigLayer.OVERRIDES, location="overrides")
     validated = {
         key: _coerce_mapping_value(
-            _SETTINGS_BY_KEY[key], value, layer=ConfigLayer.OVERRIDES, location="overrides"
+            _SETTINGS_BY_KEY[key],
+            value,
+            layer=ConfigLayer.OVERRIDES,
+            location="overrides",
         )
         for key, value in flat.items()
     }
@@ -1262,9 +1290,7 @@ def _apply(
     has one, and a second copy would be one more thing to forget to update.
     """
 
-    updates = {
-        _SETTINGS_BY_KEY[key].name: values[key] for key in keys if key in values
-    }
+    updates = {_SETTINGS_BY_KEY[key].name: values[key] for key in keys if key in values}
     if not updates:
         return base
     try:

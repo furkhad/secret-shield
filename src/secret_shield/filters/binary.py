@@ -188,7 +188,9 @@ class BinaryConfig:
     max_control_ratio: float = DEFAULT_MAX_CONTROL_RATIO
 
     def __post_init__(self) -> None:
-        if isinstance(self.max_sniff_bytes, bool) or not isinstance(self.max_sniff_bytes, int):
+        if isinstance(self.max_sniff_bytes, bool) or not isinstance(
+            self.max_sniff_bytes, int
+        ):
             raise TypeError(
                 "max_sniff_bytes must be an int, got "
                 f"{type(self.max_sniff_bytes).__name__}"

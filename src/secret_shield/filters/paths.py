@@ -104,27 +104,91 @@ so scanning them wastes time and produces noise when they change under a build.
 DEFAULT_IGNORED_EXTENSIONS: Final[frozenset[str]] = frozenset(
     {
         # Images
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".tiff",
-        ".tif", ".avif", ".heic", ".psd", ".ai", ".eps",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".webp",
+        ".tiff",
+        ".tif",
+        ".avif",
+        ".heic",
+        ".psd",
+        ".ai",
+        ".eps",
         # Fonts
-        ".woff", ".woff2", ".ttf", ".otf", ".eot",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".eot",
         # Audio and video
-        ".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a",
-        ".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv",
+        ".mp3",
+        ".wav",
+        ".flac",
+        ".ogg",
+        ".aac",
+        ".m4a",
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".webm",
+        ".wmv",
         # Archives
-        ".zip", ".gz", ".bz2", ".xz", ".zst", ".7z", ".rar", ".tar", ".tgz",
-        ".jar", ".war", ".whl", ".iso", ".dmg",
+        ".zip",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".zst",
+        ".7z",
+        ".rar",
+        ".tar",
+        ".tgz",
+        ".jar",
+        ".war",
+        ".whl",
+        ".iso",
+        ".dmg",
         # Compiled objects
-        ".class", ".pyc", ".pyo", ".pyd", ".so", ".dylib", ".dll", ".exe",
-        ".bin", ".o", ".obj", ".a", ".lib", ".wasm", ".beam",
+        ".class",
+        ".pyc",
+        ".pyo",
+        ".pyd",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".exe",
+        ".bin",
+        ".o",
+        ".obj",
+        ".a",
+        ".lib",
+        ".wasm",
+        ".beam",
         # Documents and databases
-        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-        ".db", ".sqlite", ".sqlite3", ".mdb", ".dat",
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".mdb",
+        ".dat",
         # Debugging and profiling output
         # Lowercase: .dSYM bundles are named that way on disk, but extension
         # matching folds case, so the shipped default must already be in
         # normalised form or the config would not compare equal to itself.
-        ".pdb", ".dsym", ".prof", ".core",
+        ".pdb",
+        ".dsym",
+        ".prof",
+        ".core",
     }
 )
 """Extensions skipped as a cheap pre-filter.
@@ -139,6 +203,7 @@ extension and is the single most likely place for a secret, and ``.pem`` and
 ``.key`` are text containing private keys that the scanner must reach. Only
 formats that cannot contain searchable text are listed.
 """
+
 
 class SkipReason(enum.StrEnum):
     """Why a path was not scanned.
@@ -260,9 +325,13 @@ class Decision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.include, bool):
-            raise TypeError(f"include must be a bool, got {type(self.include).__name__}")
+            raise TypeError(
+                f"include must be a bool, got {type(self.include).__name__}"
+            )
         if self.reason is not None and not isinstance(self.reason, SkipReason):
-            raise TypeError(f"reason must be a SkipReason, got {type(self.reason).__name__}")
+            raise TypeError(
+                f"reason must be a SkipReason, got {type(self.reason).__name__}"
+            )
         if self.include and self.reason is not None:
             raise ValueError("an accepted path cannot carry a skip reason")
         if not self.include and self.reason is None:
@@ -371,7 +440,9 @@ def _validate_extensions(values: object, name: str) -> frozenset[str]:
         if not lowered:
             raise ValueError(f"{name} must not contain an empty extension")
         if "/" in lowered or "\\" in lowered:
-            raise ValueError(f"{name} entries must be extensions, not paths; got {item!r}")
+            raise ValueError(
+                f"{name} entries must be extensions, not paths; got {item!r}"
+            )
         if lowered.startswith(".") and len(lowered) > 1:
             normalized.add(lowered)
         elif lowered.startswith("."):
@@ -415,7 +486,9 @@ def _validate_paths(values: object, name: str) -> tuple[str, ...]:
                 f"{name} entries must be relative to the scan root; got {item!r}"
             )
 
-        parts = [part for part in item.replace("\\", "/").split("/") if part and part != "."]
+        parts = [
+            part for part in item.replace("\\", "/").split("/") if part and part != "."
+        ]
         if ".." in parts:
             raise ValueError(
                 f"{name} entries must not escape the scan root with '..'; got {item!r}"
@@ -469,10 +542,14 @@ class PathFilterConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(
-            self, "ignored_directories", _validate_names(self.ignored_directories, "ignored_directories")
+            self,
+            "ignored_directories",
+            _validate_names(self.ignored_directories, "ignored_directories"),
         )
         object.__setattr__(
-            self, "ignored_filenames", _validate_names(self.ignored_filenames, "ignored_filenames")
+            self,
+            "ignored_filenames",
+            _validate_names(self.ignored_filenames, "ignored_filenames"),
         )
         object.__setattr__(
             self,
@@ -505,9 +582,18 @@ class PathFilterConfig:
 
         An exact match, never a substring. ``envs``, ``environment`` and
         ``env.py`` are all scanned; only ``env`` is skipped.
+
+        Additionally, directories ending in ``.egg-info`` or ``.dist-info``
+        are always ignored — they are package metadata generated by setuptools/pip
+        and contain no author-written content.
         """
 
-        return name in self.ignored_directories
+        if name in self.ignored_directories:
+            return True
+        # Package metadata directories (setuptools/pip build artifacts)
+        if name.endswith((".egg-info", ".dist-info")):
+            return True
+        return False
 
     def ignores_filename(self, name: str) -> bool:
         """Return whether ``name`` is an ignored exact filename."""

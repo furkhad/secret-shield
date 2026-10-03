@@ -45,9 +45,7 @@ from secret_shield.filters.paths import (
 
 
 class TestIgnoredDirectories:
-    @pytest.mark.parametrize(
-        "name", [".git", "node_modules", ".venv", "venv", "env"]
-    )
+    @pytest.mark.parametrize("name", [".git", "node_modules", ".venv", "venv", "env"])
     def test_the_documented_names_are_ignored(self, name: str) -> None:
         """The five the stage brief requires, by name, so none can be dropped."""
 
@@ -77,7 +75,16 @@ class TestIgnoredDirectories:
         assert not PathFilterConfig().ignores_directory_name(name)
 
     def test_a_regular_directory_is_not_ignored(self) -> None:
-        for name in ("src", "tests", "lib", "docs", "build", "dist", "vendor", "target"):
+        for name in (
+            "src",
+            "tests",
+            "lib",
+            "docs",
+            "build",
+            "dist",
+            "vendor",
+            "target",
+        ):
             assert not PathFilterConfig().ignores_directory_name(name), name
 
     def test_version_control_metadata_is_ignored(self) -> None:
@@ -85,7 +92,13 @@ class TestIgnoredDirectories:
             assert PathFilterConfig().ignores_directory_name(name), name
 
     def test_tool_caches_are_ignored(self) -> None:
-        for name in ("__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox"):
+        for name in (
+            "__pycache__",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".tox",
+        ):
             assert PathFilterConfig().ignores_directory_name(name), name
 
     def test_build_output_is_not_ignored_by_default(self) -> None:
@@ -188,7 +201,9 @@ class TestIgnoredExtensions:
         [("png", ".png"), (".png", ".png"), (".PNG", ".png"), ("PnG", ".png")],
     )
     def test_extensions_are_normalised(self, supplied: str, stored: str) -> None:
-        assert PathFilterConfig(ignored_extensions=[supplied]).ignored_extensions == {stored}
+        assert PathFilterConfig(ignored_extensions=[supplied]).ignored_extensions == {
+            stored
+        }
 
     def test_a_bare_dot_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="bare dot"):
@@ -227,7 +242,9 @@ class TestIgnoredPaths:
         assert config.ignores_path(path) is ignored
 
     def test_separators_are_normalised(self) -> None:
-        assert PathFilterConfig(ignored_paths=("docs\\gen",)).ignored_paths == ("docs/gen",)
+        assert PathFilterConfig(ignored_paths=("docs\\gen",)).ignored_paths == (
+            "docs/gen",
+        )
 
     def test_trailing_separators_are_ignored(self) -> None:
         assert PathFilterConfig(ignored_paths=("build/",)).ignored_paths == ("build",)
@@ -276,7 +293,9 @@ class TestIgnoredPaths:
     def test_the_helper_agrees_with_the_method(self) -> None:
         config = PathFilterConfig(ignored_paths=("build", "docs/gen"))
         for path in ("build/a", "docs/gen/b", "src/main.py", "rebuild/a"):
-            assert matches_ignored_path(path, config.ignored_paths) == config.ignores_path(path)
+            assert matches_ignored_path(
+                path, config.ignored_paths
+            ) == config.ignores_path(path)
 
     def test_the_helper_handles_an_empty_list(self) -> None:
         assert not matches_ignored_path("anything", ())
@@ -289,7 +308,9 @@ class TestIgnoredPaths:
 
 class TestDecision:
     def test_an_ordinary_file_is_accepted(self) -> None:
-        decision = PathFilterConfig().decide("main.py", "src/main.py", is_directory=False)
+        decision = PathFilterConfig().decide(
+            "main.py", "src/main.py", is_directory=False
+        )
         assert decision.include
         assert decision.reason is None
 
@@ -324,7 +345,10 @@ class TestDecision:
             ignored_paths=("build", "assets/logo.png"),
         )
         # Both the path rule and the directory rule match.
-        assert config.decide("build", "build", is_directory=True).reason is SkipReason.IGNORED_PATH
+        assert (
+            config.decide("build", "build", is_directory=True).reason
+            is SkipReason.IGNORED_PATH
+        )
         # Only the directory rule matches: the path rule is anchored at the root.
         assert (
             config.decide("build", "assets/build", is_directory=True).reason

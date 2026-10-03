@@ -47,6 +47,7 @@ from secret_shield.sources.git_cmd import (
     HeadState,
 )
 
+
 def _git_is_available() -> bool:
     """Return whether a usable ``git`` is on ``PATH``.
 
@@ -55,7 +56,9 @@ def _git_is_available() -> bool:
     """
 
     try:
-        subprocess.run(["git", "--version"], capture_output=True, timeout=30, check=False)
+        subprocess.run(
+            ["git", "--version"], capture_output=True, timeout=30, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return False
     return True
@@ -275,7 +278,10 @@ class TestBuildArgv:
             git_cmd.validate_revision_argument(value, "since")
 
     def test_revision_arguments_are_trimmed_not_rewritten(self) -> None:
-        assert git_cmd.validate_revision_argument("  2 years ago ", "since") == "2 years ago"
+        assert (
+            git_cmd.validate_revision_argument("  2 years ago ", "since")
+            == "2 years ago"
+        )
 
     def test_revision_arguments_reject_a_non_string(self) -> None:
         with pytest.raises(TypeError):
@@ -328,7 +334,11 @@ class TestEnvironment:
         """A hostile value must be overwritten, not merely defaulted."""
 
         environment = git_cmd.git_environment(
-            {"GIT_TERMINAL_PROMPT": "1", "GIT_OPTIONAL_LOCKS": "1", "GIT_CONFIG_NOSYSTEM": "0"}
+            {
+                "GIT_TERMINAL_PROMPT": "1",
+                "GIT_OPTIONAL_LOCKS": "1",
+                "GIT_CONFIG_NOSYSTEM": "0",
+            }
         )
 
         assert environment["GIT_TERMINAL_PROMPT"] == "0"
@@ -516,7 +526,9 @@ class TestHeadState:
 
 class TestObjectInventory:
     @needs_git
-    def test_every_reachable_object_is_named_exactly_once(self, simple_repo: Path) -> None:
+    def test_every_reachable_object_is_named_exactly_once(
+        self, simple_repo: Path
+    ) -> None:
         inventory = git_cmd.iter_object_inventory(simple_repo)
 
         assert len(inventory.objects) == len(set(inventory.objects))
@@ -524,7 +536,9 @@ class TestObjectInventory:
         assert not inventory.truncated
 
     @needs_git
-    def test_the_limit_is_reported_rather_than_silently_applied(self, simple_repo: Path) -> None:
+    def test_the_limit_is_reported_rather_than_silently_applied(
+        self, simple_repo: Path
+    ) -> None:
         inventory = git_cmd.iter_object_inventory(simple_repo, max_objects=1)
 
         assert inventory.truncated
@@ -566,13 +580,17 @@ class TestHistoryWalk:
         self, deleted_file_repo: Path
     ) -> None:
         references = list(git_cmd.HistoryWalk(deleted_file_repo))
-        added = run_git(deleted_file_repo, "rev-list", "--max-parents=0", "HEAD").strip()
+        added = run_git(
+            deleted_file_repo, "rev-list", "--max-parents=0", "HEAD"
+        ).strip()
 
         assert [reference.path for reference in references] == ["b.txt"]
         assert references[0].commit == added
 
     @needs_git
-    def test_a_deletion_record_produces_no_reference(self, deleted_file_repo: Path) -> None:
+    def test_a_deletion_record_produces_no_reference(
+        self, deleted_file_repo: Path
+    ) -> None:
         """A deletion's destination object name is all zeros and has no content.
 
         Attributing a reference to it would attach a path to a blob that does not
@@ -610,7 +628,9 @@ class TestHistoryWalk:
         repo = init_repo(tmp_path / "spaced")
         (repo / "a file with spaces.txt").write_text("content\n", encoding="utf-8")
         (repo / "dir with spaces").mkdir()
-        (repo / "dir with spaces" / "nested one.txt").write_text("x\n", encoding="utf-8")
+        (repo / "dir with spaces" / "nested one.txt").write_text(
+            "x\n", encoding="utf-8"
+        )
         commit_all(repo, "add")
 
         paths = {reference.path for reference in git_cmd.HistoryWalk(repo)}
@@ -632,7 +652,9 @@ class TestHistoryWalk:
         assert walk.truncated
 
     @needs_git
-    def test_the_commit_at_the_limit_contributes_its_paths(self, tmp_path: Path) -> None:
+    def test_the_commit_at_the_limit_contributes_its_paths(
+        self, tmp_path: Path
+    ) -> None:
         """``--max-count 1`` must mean "one commit", not "no commits".
 
         The commit record arrives before its path records, so stopping on the
@@ -766,7 +788,9 @@ class TestBatchAccess:
         """The memory backstop behind the caller's own size limit."""
 
         inventory = git_cmd.iter_object_inventory(simple_repo)
-        results = list(git_cmd.iter_object_payloads(simple_repo, inventory.objects, max_payload=1))
+        results = list(
+            git_cmd.iter_object_payloads(simple_repo, inventory.objects, max_payload=1)
+        )
 
         assert all(result is None for result in results)
 
@@ -832,7 +856,9 @@ class TestFailureModes:
 
         assert f"kind={expected!r}" in rendered
 
-    def test_git_stderr_never_reaches_the_exception(self, fake_git, tmp_path: Path) -> None:
+    def test_git_stderr_never_reaches_the_exception(
+        self, fake_git, tmp_path: Path
+    ) -> None:
         """A repository controls its own commit messages and ref names.
 
         Git's stderr can contain any of it. Forwarding it would put repository
@@ -852,7 +878,9 @@ class TestFailureModes:
         assert "SUPERSECRETVALUE" not in repr(raised.value)
 
     @needs_git
-    def test_garbage_output_is_reported_as_malformed(self, fake_git, tmp_path: Path) -> None:
+    def test_garbage_output_is_reported_as_malformed(
+        self, fake_git, tmp_path: Path
+    ) -> None:
         """A record that is not a record is a parse failure, not a crash.
 
         The fake answers ``rev-parse`` correctly -- so the walk is attempted --
@@ -861,7 +889,7 @@ class TestFailureModes:
 
         fake_git(
             'case "$*" in\n'
-            '  *rev-parse*) echo 1111111111111111111111111111111111111111; exit 0 ;;\n'
+            "  *rev-parse*) echo 1111111111111111111111111111111111111111; exit 0 ;;\n"
             "esac\n"
             "printf 'not-a-record\\n'\n"
             "exit 0\n",
@@ -874,12 +902,14 @@ class TestFailureModes:
         assert raised.value.kind == KIND_MALFORMED
 
     @needs_git
-    def test_a_hung_git_is_killed_rather_than_waited_on(self, fake_git, tmp_path: Path) -> None:
+    def test_a_hung_git_is_killed_rather_than_waited_on(
+        self, fake_git, tmp_path: Path
+    ) -> None:
         """The timeout is the difference between a scan and a stuck pipeline."""
 
         fake_git(
             'case "$*" in\n'
-            '  *rev-parse*) echo 1111111111111111111111111111111111111111; exit 0 ;;\n'
+            "  *rev-parse*) echo 1111111111111111111111111111111111111111; exit 0 ;;\n"
             "esac\n"
             "sleep 30\n",
             tmp_path,
@@ -897,7 +927,9 @@ class TestFailureModes:
 
 
 class TestSubprocessIsConfinedHere:
-    def test_this_is_the_only_module_in_the_package_that_imports_subprocess(self) -> None:
+    def test_this_is_the_only_module_in_the_package_that_imports_subprocess(
+        self,
+    ) -> None:
         """The single fact that makes the audit tractable.
 
         An auditor asked "could a hostile repository make SecretShield execute
@@ -946,7 +978,11 @@ class TestTimeoutBoundsAreConsistent:
         assert MIN_TIMEOUT_SECONDS < MAX_TIMEOUT_SECONDS
 
     def test_the_default_is_inside_the_range(self) -> None:
-        assert MIN_TIMEOUT_SECONDS <= git_cmd.DEFAULT_TIMEOUT_SECONDS <= MAX_TIMEOUT_SECONDS
+        assert (
+            MIN_TIMEOUT_SECONDS
+            <= git_cmd.DEFAULT_TIMEOUT_SECONDS
+            <= MAX_TIMEOUT_SECONDS
+        )
 
     def test_the_timeout_check_rejects_a_bool(self) -> None:
         """``True`` is an ``int``, and a one-second timeout is not what it means."""

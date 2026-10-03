@@ -6,7 +6,7 @@ no raw secrets, no raw source lines, only safe escaped content.
 
 from __future__ import annotations
 
-from ..models import Finding, ScanError, ScanResult
+from ..models import Finding, ScanResult
 from .security import markdown_escape, sanitize_text
 
 SCHEMA_VERSION = "1.0"
@@ -114,7 +114,9 @@ def render_markdown(result: ScanResult, *, include_fingerprint: bool = True) -> 
         for e in errors:
             path_part = f" ({e.path})" if e.path else ""
             code_part = f" [{e.code}]" if e.code else ""
-            lines.append(f"- {markdown_escape(sanitize_text(e.reason))}{path_part}{code_part}")
+            lines.append(
+                f"- {markdown_escape(sanitize_text(e.reason))}{path_part}{code_part}"
+            )
         lines.append("")
 
     return "\n".join(lines)

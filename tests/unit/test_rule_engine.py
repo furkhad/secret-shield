@@ -24,7 +24,6 @@ from secret_shield.detectors.base import (
     find_matches,
     findings_from,
 )
-from secret_shield.masking import FULLY_REDACTED
 from secret_shield.models import Confidence, SecretCategory, Severity
 
 # ---------------------------------------------------------------------------
@@ -100,7 +99,9 @@ class TestRuleConstruction:
         # Repeated search calls must reuse the same compiled object.
         assert rule.compiled is rule.compiled
 
-    def test_a_valid_rule_has_no_max_length_and_no_entropy_floor_by_default(self) -> None:
+    def test_a_valid_rule_has_no_max_length_and_no_entropy_floor_by_default(
+        self,
+    ) -> None:
         rule = make_rule()
 
         assert rule.max_length is None
@@ -165,7 +166,9 @@ class TestRuleValidation:
         with pytest.raises(ValueError, match="non-empty"):
             make_rule(id=empty_id)
 
-    @pytest.mark.parametrize("good_id", ["aws", "aws-secret", "gh-pat-classic", "db2-uri", "stage_2"])
+    @pytest.mark.parametrize(
+        "good_id", ["aws", "aws-secret", "gh-pat-classic", "db2-uri", "stage_2"]
+    )
     def test_well_formed_ids_are_accepted(self, good_id: str) -> None:
         """Segments are joined by ``-`` or ``_`` and are lower-case alnum.
 
@@ -242,7 +245,9 @@ class TestRuleValidation:
         with pytest.raises(TypeError, match="max_length"):
             make_rule(max_length=bad)
 
-    @pytest.mark.parametrize("field", ["priority", "dotall", "reject_hashes", "suppress_placeholders"])
+    @pytest.mark.parametrize(
+        "field", ["priority", "dotall", "reject_hashes", "suppress_placeholders"]
+    )
     def test_misc_flags_are_type_checked(self, field: str) -> None:
         with pytest.raises(TypeError, match=field):
             make_rule(**{field: "yes"})
@@ -264,7 +269,9 @@ class TestRuleValidation:
     def test_a_context_gated_rule_must_declare_keywords(self) -> None:
         """A rule that needs context and names none could never match anything."""
 
-        with pytest.raises(ValueError, match="requires context but declares no keywords"):
+        with pytest.raises(
+            ValueError, match="requires context but declares no keywords"
+        ):
             make_rule(requires_context=True)
 
     def test_a_wrong_mask_policy_is_rejected(self) -> None:
@@ -284,7 +291,9 @@ class TestConfidenceFloor:
         assert rule.confidence_floor is Confidence.CANDIDATE
 
     def test_an_explicit_base_overrides_the_specificity_derived_floor(self) -> None:
-        rule = make_rule(specificity=Specificity.EXACT, base_confidence=Confidence.PROBABLE)
+        rule = make_rule(
+            specificity=Specificity.EXACT, base_confidence=Confidence.PROBABLE
+        )
 
         assert rule.confidence_floor is Confidence.PROBABLE
 
@@ -329,7 +338,9 @@ class TestDetectorRegistry:
             registry.register(make_rule(id="alpha", name="Different name"))
 
     def test_the_original_rule_survives_a_rejected_duplicate(self) -> None:
-        registry: DetectorRegistry = DetectorRegistry([make_rule(id="alpha", severity=Severity.LOW)])
+        registry: DetectorRegistry = DetectorRegistry(
+            [make_rule(id="alpha", severity=Severity.LOW)]
+        )
 
         with pytest.raises(ValueError):
             registry.register(make_rule(id="alpha", severity=Severity.CRITICAL))
@@ -407,7 +418,9 @@ class TestDetectorRegistry:
         assert len(registry) == 1
 
     def test_a_generator_of_rules_is_accepted(self) -> None:
-        registry: DetectorRegistry = DetectorRegistry(make_rule(id=str(n)) for n in range(3))
+        registry: DetectorRegistry = DetectorRegistry(
+            make_rule(id=str(n)) for n in range(3)
+        )
 
         assert len(registry) == 3
 
@@ -539,7 +552,9 @@ class TestRawMatchGeometry:
 
 class TestRawMatchConfidence:
     def test_a_heuristic_rule_is_raised_one_step_by_evidence(self) -> None:
-        rule = make_rule(specificity=Specificity.HEURISTIC, base_confidence=Confidence.CANDIDATE)
+        rule = make_rule(
+            specificity=Specificity.HEURISTIC, base_confidence=Confidence.CANDIDATE
+        )
         match = make_match(rule=rule)
         match = RawMatch(
             rule=rule,
@@ -580,7 +595,9 @@ class TestRawMatchConfidence:
         assert match.confidence() is not Confidence.VERIFIED
 
     def test_a_heuristic_rule_without_evidence_stays_at_its_floor(self) -> None:
-        rule = make_rule(specificity=Specificity.HEURISTIC, base_confidence=Confidence.CANDIDATE)
+        rule = make_rule(
+            specificity=Specificity.HEURISTIC, base_confidence=Confidence.CANDIDATE
+        )
         match = make_match(rule=rule)
         match = RawMatch(
             rule=rule,
@@ -597,7 +614,9 @@ class TestRawMatchConfidence:
         assert match.confidence() is Confidence.CANDIDATE
 
     def test_an_assignment_name_alone_is_enough_evidence(self) -> None:
-        rule = make_rule(specificity=Specificity.HEURISTIC, base_confidence=Confidence.CANDIDATE)
+        rule = make_rule(
+            specificity=Specificity.HEURISTIC, base_confidence=Confidence.CANDIDATE
+        )
         match = make_match(rule=rule)
         match = RawMatch(
             rule=rule,
@@ -622,7 +641,9 @@ class TestRawMatchConfidence:
 
 class TestFindMatches:
     def test_a_rule_that_matches_produces_one_raw_match(self) -> None:
-        matches = find_matches('key = "SYNTH-deadbeef"', registry=_registry(make_rule()))
+        matches = find_matches(
+            'key = "SYNTH-deadbeef"', registry=_registry(make_rule())
+        )
 
         assert [m.value for m in matches] == ["SYNTH-deadbeef"]
 
@@ -634,7 +655,9 @@ class TestFindMatches:
 
     def test_positions_are_correct_on_a_later_line(self) -> None:
         line = "third = SYNTH-deadbeef"
-        matches = find_matches(f"first line\nsecond\n{line}\n", registry=_registry(make_rule()))
+        matches = find_matches(
+            f"first line\nsecond\n{line}\n", registry=_registry(make_rule())
+        )
 
         assert matches[0].line == 3
         assert matches[0].column == line.index("SYNTH") + 1
@@ -712,9 +735,14 @@ class TestFindMatches:
         part of a vendor prefix. A rule that has already established what the
         value is must not be silenced by a marker inside it."""
 
-        rule = make_rule(pattern=r"(?P<secret>sk_test_[A-Za-z0-9]{16,})", suppress_placeholders=False)
+        rule = make_rule(
+            pattern=r"(?P<secret>sk_test_[A-Za-z0-9]{16,})", suppress_placeholders=False
+        )
 
-        assert len(find_matches("sk_test_" + "aB3dE5fG7hJ9kL1m", registry=_registry(rule))) == 1
+        assert (
+            len(find_matches("sk_test_" + "aB3dE5fG7hJ9kL1m", registry=_registry(rule)))
+            == 1
+        )
 
     def test_repetitive_structure_is_discarded(self) -> None:
         rule = make_rule(pattern=r"key=(?P<secret>[A-Za-z0-9]+)")
@@ -748,7 +776,10 @@ class TestFindMatches:
         value = "SYNTH7cK2mQ9wR4tB8nL3vH6jF0dS5gX1aC2eR4z"
 
         assert find_matches(value, registry=registry) == []
-        assert len(find_matches(f'aws_secret_access_key = "{value}"', registry=registry)) == 1
+        assert (
+            len(find_matches(f'aws_secret_access_key = "{value}"', registry=registry))
+            == 1
+        )
 
     def test_context_is_recorded_as_matched_keywords(self) -> None:
         rule = make_rule(
@@ -758,20 +789,24 @@ class TestFindMatches:
             specificity=Specificity.HEURISTIC,
         )
         matches = find_matches(
-            f'AWS_SECRET_ACCESS_KEY = "SYNTH7cK2mQ9wR4tB8nL3vH6jF0dS5gX1aC2eR4z"',
+            'AWS_SECRET_ACCESS_KEY = "SYNTH7cK2mQ9wR4tB8nL3vH6jF0dS5gX1aC2eR4z"',
             registry=_registry(rule),
         )
 
         assert "aws_secret_access_key" in matches[0].matched_keywords
 
     def test_an_assignment_name_is_captured(self) -> None:
-        matches = find_matches('DB_PASSWORD = "SYNTH-deadbeef"', registry=_registry(make_rule()))
+        matches = find_matches(
+            'DB_PASSWORD = "SYNTH-deadbeef"', registry=_registry(make_rule())
+        )
 
         assert matches[0].assignment_name == "DB_PASSWORD"
 
     def test_a_keyword_on_the_line_does_not_require_an_assignment(self) -> None:
         rule = make_rule(pattern=r"SYNTH-(?P<secret>[0-9a-f]{8})")
-        matches = find_matches("the api_key SYNTH-deadbeef above", registry=_registry(rule))
+        matches = find_matches(
+            "the api_key SYNTH-deadbeef above", registry=_registry(rule)
+        )
 
         assert matches[0].assignment_name is None
 
@@ -802,14 +837,22 @@ class TestFindMatches:
         text = 'a = "SYNTH-deadbeef"\nb = "SYNTH-cafebabe"\n'
         registry = _registry(make_rule())
 
-        first = [(m.id, m.line, m.column, m.value) for m in find_matches(text, registry=registry)]
-        second = [(m.id, m.line, m.column, m.value) for m in find_matches(text, registry=registry)]
+        first = [
+            (m.id, m.line, m.column, m.value)
+            for m in find_matches(text, registry=registry)
+        ]
+        second = [
+            (m.id, m.line, m.column, m.value)
+            for m in find_matches(text, registry=registry)
+        ]
 
         assert first == second
 
     def test_no_raw_value_survives_into_the_returned_findings(self) -> None:
         value = "SYNTH7cK2mQ9wR4tB8nL3vH6jF0dS5gX1aC2eR4z"
-        findings = findings_from(find_matches(f'aws_secret_access_key = "{value}"'), "x.py")
+        findings = findings_from(
+            find_matches(f'aws_secret_access_key = "{value}"'), "x.py"
+        )
 
         assert value not in repr(findings)
 
@@ -833,7 +876,9 @@ class TestFindingsFrom:
 
     def test_the_path_reaches_every_finding(self) -> None:
         registry = _registry(make_rule())
-        findings = findings_from(find_matches('a = "SYNTH-deadbeef"', registry=registry), "a/b.py")
+        findings = findings_from(
+            find_matches('a = "SYNTH-deadbeef"', registry=registry), "a/b.py"
+        )
 
         assert findings[0].location.path == "a/b.py"
 
@@ -857,9 +902,13 @@ class TestFindingsFrom:
 
     def test_findings_are_deterministic(self) -> None:
         registry = _registry(make_rule())
-        matches = find_matches('a = "SYNTH-deadbeef"\nb = "SYNTH-cafebabe"', registry=registry)
+        matches = find_matches(
+            'a = "SYNTH-deadbeef"\nb = "SYNTH-cafebabe"', registry=registry
+        )
 
-        assert repr(findings_from(matches, "f.py")) == repr(findings_from(matches, "f.py"))
+        assert repr(findings_from(matches, "f.py")) == repr(
+            findings_from(matches, "f.py")
+        )
 
     def test_no_findings_produce_an_empty_tuple(self) -> None:
         assert findings_from([], "f.py") == ()

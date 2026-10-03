@@ -94,12 +94,14 @@ def project(tmp_path: Path) -> Path:
 
     # Real credential-shaped files that must be found.
     (root / ".env").write_text(
-        f"GITHUB_TOKEN={GITHUB_OAUTH_TOKEN}\nSTRIPE={stripe_live_key()}\n", encoding="utf-8"
+        f"GITHUB_TOKEN={GITHUB_OAUTH_TOKEN}\nSTRIPE={stripe_live_key()}\n",
+        encoding="utf-8",
     )
     (root / "deploy.pem").write_text(PRIVATE_KEY_BLOCK, encoding="utf-8")
-    (root / "config" ).mkdir()
+    (root / "config").mkdir()
     (root / "config" / "aws.ini").write_text(
-        f"[default]\naws_secret_access_key = {AWS_SECRET_ACCESS_KEY}\n", encoding="utf-8"
+        f"[default]\naws_secret_access_key = {AWS_SECRET_ACCESS_KEY}\n",
+        encoding="utf-8",
     )
 
     # Copies inside paths that must be skipped.
@@ -108,7 +110,9 @@ def project(tmp_path: Path) -> Path:
         f'const k = "{OPENAI_PROJECT_KEY}";\n', encoding="utf-8"
     )
     (root / ".git").mkdir()
-    (root / ".git" / "config").write_text(f'key = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+    (root / ".git" / "config").write_text(
+        f'key = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+    )
     (root / "assets").mkdir()
     (root / "assets" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(64))
 
@@ -173,7 +177,9 @@ class TestScanningARealisticProject:
         # the ceiling: nothing here has been checked against AWS.
         assert aws_line[0].confidence is Confidence.HIGH_CONFIDENCE
 
-    def test_each_planted_credential_is_reported_by_a_vendor_rule(self, project: Path) -> None:
+    def test_each_planted_credential_is_reported_by_a_vendor_rule(
+        self, project: Path
+    ) -> None:
         """Every rule that fired names a vendor.
 
         Asserted as a set of rule ids so a future change that adds or removes a
@@ -195,7 +201,9 @@ class TestScanningARealisticProject:
     def test_every_planted_file_is_covered(self, project: Path) -> None:
         """No planted file is missing from the findings, whatever the rule ids."""
 
-        found_paths = {finding.location.path for finding in scan_path(project, config()).findings}
+        found_paths = {
+            finding.location.path for finding in scan_path(project, config()).findings
+        }
         assert found_paths == {
             ".env",
             "config/aws.ini",
@@ -217,7 +225,7 @@ class TestScanningARealisticProject:
         assert counts["ignored-extension"] == 1
 
     def test_prose_about_credentials_is_not_a_finding(self, project: Path) -> None:
-        """"Rotate the credentials" is not a credential."""
+        """ "Rotate the credentials" is not a credential."""
 
         result = scan_path(project, config())
         assert not any(
@@ -234,7 +242,12 @@ class TestScanningARealisticProject:
         """
 
         result = scan_path(project, config())
-        clean = {"README.md", "pyproject.toml", "src/example/__init__.py", "src/example/client.py"}
+        clean = {
+            "README.md",
+            "pyproject.toml",
+            "src/example/__init__.py",
+            "src/example/client.py",
+        }
         assert result.files_scanned == 11
         assert not any(finding.location.path in clean for finding in result.findings)
 
@@ -263,7 +276,10 @@ class TestScanningARealisticProject:
         assert scan_path(project, config()).errors == ()
 
     def test_findings_are_sorted_by_path(self, project: Path) -> None:
-        paths = [finding.location.path for finding in scan_path(project, config()).sorted_findings()]
+        paths = [
+            finding.location.path
+            for finding in scan_path(project, config()).sorted_findings()
+        ]
         assert paths == sorted(paths, key=lambda p: (p,))
 
 
@@ -303,7 +319,9 @@ class TestDeterminismEndToEnd:
         for root, order in ((forward, names), (backward, list(reversed(names)))):
             root.mkdir()
             for name in order:
-                (root / name).write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+                (root / name).write_text(
+                    f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+                )
 
         assert identifiers(scan_path(forward, config())) == identifiers(
             scan_path(backward, config())
@@ -343,9 +361,13 @@ class TestDeterminismEndToEnd:
 
 class TestMixedContent:
     def test_a_binary_file_among_text_files_is_skipped(self, tmp_path: Path) -> None:
-        (tmp_path / "a.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+        (tmp_path / "a.py").write_text(
+            f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+        )
         (tmp_path / "b.blob").write_bytes(b"\x00\x01\x02" * 100)
-        (tmp_path / "c.py").write_text(f'K = "{GITHUB_OAUTH_TOKEN}"\n', encoding="utf-8")
+        (tmp_path / "c.py").write_text(
+            f'K = "{GITHUB_OAUTH_TOKEN}"\n', encoding="utf-8"
+        )
 
         result = scan_path(tmp_path, config())
         assert result.files_scanned == 2
@@ -395,7 +417,8 @@ class TestMixedContent:
 
         result = scan_path(tmp_path, config())
         columns = {
-            finding.location.path: finding.location.column for finding in result.findings
+            finding.location.path: finding.location.column
+            for finding in result.findings
         }
         assert columns["plain.py"] == columns["bom.py"]
 
@@ -406,7 +429,9 @@ class TestPartialFailure:
         root = tmp_path / "root"
         root.mkdir()
         (root / "a.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
-        (root / "locked.py").write_text(f'K = "{GITHUB_OAUTH_TOKEN}"\n', encoding="utf-8")
+        (root / "locked.py").write_text(
+            f'K = "{GITHUB_OAUTH_TOKEN}"\n', encoding="utf-8"
+        )
         (root / "c.py").write_text(f'K = "{AWS_SECRET_ACCESS_KEY}"\n', encoding="utf-8")
         (root / "locked.py").chmod(0o000)
         try:
@@ -419,13 +444,19 @@ class TestPartialFailure:
             (root / "locked.py").chmod(0o644)
 
     @needs_non_root
-    def test_an_unreadable_directory_does_not_hide_the_others(self, tmp_path: Path) -> None:
+    def test_an_unreadable_directory_does_not_hide_the_others(
+        self, tmp_path: Path
+    ) -> None:
         root = tmp_path / "root"
         root.mkdir()
-        (root / "visible.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+        (root / "visible.py").write_text(
+            f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+        )
         locked = root / "locked"
         locked.mkdir()
-        (locked / "hidden.py").write_text(f'K = "{GITHUB_OAUTH_TOKEN}"\n', encoding="utf-8")
+        (locked / "hidden.py").write_text(
+            f'K = "{GITHUB_OAUTH_TOKEN}"\n', encoding="utf-8"
+        )
         locked.chmod(0o000)
         try:
             result = scan_path(root, config())
@@ -439,7 +470,9 @@ class TestPartialFailure:
         """A capped scan must never be reportable as a clean one."""
 
         for index in range(10):
-            (tmp_path / f"f{index}.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+            (tmp_path / f"f{index}.py").write_text(
+                f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+            )
 
         result = scan_path(tmp_path, config(max_files=3))
         assert [error.code for error in result.errors] == ["too-many-files"]
@@ -449,7 +482,9 @@ class TestPartialFailure:
         """One failure must not discard the results that did arrive."""
 
         (tmp_path / "a.blob").write_bytes(b"\x00" * 50)
-        (tmp_path / "b.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+        (tmp_path / "b.py").write_text(
+            f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+        )
         result = scan_path(tmp_path, config())
         assert result.errors and result.findings
 
@@ -529,7 +564,9 @@ class TestHostileTree:
         for depth in range(60):
             current = current / f"d{depth}"
         current.mkdir(parents=True)
-        (current / "deep.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+        (current / "deep.py").write_text(
+            f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+        )
 
         result = scan_path(tmp_path, config())
         assert result.files_scanned == 1
@@ -541,18 +578,24 @@ class TestHostileTree:
         """``env`` is ignored; ``environment`` and ``envrc`` are not."""
 
         (tmp_path / "env").mkdir()
-        (tmp_path / "env" / "leak.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+        (tmp_path / "env" / "leak.py").write_text(
+            f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+        )
         (tmp_path / "environment").mkdir()
         (tmp_path / "environment" / "ok.py").write_text(
             f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
         )
 
         result = scan_path(tmp_path, config())
-        assert [finding.location.path for finding in result.findings] == ["environment/ok.py"]
+        assert [finding.location.path for finding in result.findings] == [
+            "environment/ok.py"
+        ]
 
     def test_a_file_that_looks_like_a_glob_is_literal(self, tmp_path: Path) -> None:
         (tmp_path / "*.py").write_text("x = 1\n", encoding="utf-8")
-        (tmp_path / "real.py").write_text(f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8")
+        (tmp_path / "real.py").write_text(
+            f'K = "{OPENAI_PROJECT_KEY}"\n', encoding="utf-8"
+        )
 
         result = scan_path(tmp_path, config(filters=PathFilterConfig()))
         assert result.files_scanned == 2
@@ -566,9 +609,7 @@ class TestHostileTree:
         assert result.files_scanned == 1
         assert result.findings[0].location.path == "a(b|c)[d].py"
 
-    def test_a_control_character_in_a_name_is_not_scanned(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_control_character_in_a_name_is_not_scanned(self, tmp_path: Path) -> None:
         """A name the terminal would interpret is refused, not executed.
 
         A filename carrying an ANSI escape is the cheapest possible way to forge

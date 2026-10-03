@@ -44,7 +44,9 @@ def assert_silent(text: str, forbidden: str, *, note: str = "") -> None:
     """Assert ``forbidden`` does not fire, allowing other rules to."""
 
     fired_ids = fired(text)
-    assert forbidden not in fired_ids, f"{note or forbidden!r} fired on {text!r}: {fired_ids}"
+    assert (
+        forbidden not in fired_ids
+    ), f"{note or forbidden!r} fired on {text!r}: {fired_ids}"
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +162,14 @@ class TestAws:
             "akia5h2xnsynthkey09a",  # lower case
             "AKIA5H2XNSYNTHKEY09AB",  # 21
         ],
-        ids=["documentation-example", "repeated-char", "prefix-only", "too-short", "lower-case", "too-long"],
+        ids=[
+            "documentation-example",
+            "repeated-char",
+            "prefix-only",
+            "too-short",
+            "lower-case",
+            "too-long",
+        ],
     )
     def test_a_malformed_or_documented_key_id_is_not_detected(self, value: str) -> None:
         assert_silent(f'aws_access_key_id = "{value}"', "aws-access-key-id")
@@ -174,7 +183,9 @@ class TestAws:
             ("ASCAIOSFODNN7SYNTHQ", "certificate authority id"),
         ],
     )
-    def test_non_credential_aws_identifiers_are_not_detected(self, value: str, note: str) -> None:
+    def test_non_credential_aws_identifiers_are_not_detected(
+        self, value: str, note: str
+    ) -> None:
         """AWS issues several ``A???`` prefixed identifiers. Only ``AKIA`` and
         ``ASIA`` are access keys; the rest identify objects and are published
         in ARNs, IAM policies and CloudTrail records. Matching them would bury
@@ -198,7 +209,9 @@ class TestAws:
         ],
         ids=["uninformative", "data", "creds", "wrong-aws-identifier", "wrong-concept"],
     )
-    def test_a_bare_forty_character_string_is_never_an_aws_secret(self, line: str) -> None:
+    def test_a_bare_forty_character_string_is_never_an_aws_secret(
+        self, line: str
+    ) -> None:
         """The single most important negative test in this module.
 
         Forty characters of ``[A-Za-z0-9/+=]`` is indistinguishable from a
@@ -221,21 +234,32 @@ class TestAws:
             "AwsSecretAccessKey",
         ],
     )
-    def test_every_spelling_of_the_identifier_is_accepted(self, identifier: str) -> None:
+    def test_every_spelling_of_the_identifier_is_accepted(
+        self, identifier: str
+    ) -> None:
         text = f'{identifier} = "{fx.AWS_SECRET_ACCESS_KEY}"'
 
         assert_fires(text, "aws-secret-access-key")
 
     def test_the_secret_key_must_be_exactly_forty_characters(self) -> None:
-        assert_silent(f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY[:39]}"', "aws-secret-access-key")
-        assert_silent(f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY}z"', "aws-secret-access-key")
+        assert_silent(
+            f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY[:39]}"',
+            "aws-secret-access-key",
+        )
+        assert_silent(
+            f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY}z"',
+            "aws-secret-access-key",
+        )
 
     def test_the_contextual_evidence_raises_the_confidence_one_step(self) -> None:
         """It stays PROBABLE, not HIGH. A shape match in a variable named
         ``aws_secret_access_key`` is strong, and is still not proof."""
 
         findings = findings_from(
-            find_matches(f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY}"', registry=REGISTRY),
+            find_matches(
+                f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY}"',
+                registry=REGISTRY,
+            ),
             "deploy.env",
         )
 
@@ -252,10 +276,16 @@ class TestAws:
         """
 
         key_id = findings_from(
-            find_matches(f'aws_access_key_id = "{fx.AWS_ACCESS_KEY_ID}"', registry=REGISTRY), "a.py"
+            find_matches(
+                f'aws_access_key_id = "{fx.AWS_ACCESS_KEY_ID}"', registry=REGISTRY
+            ),
+            "a.py",
         )[0]
         secret = findings_from(
-            find_matches(f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY}"', registry=REGISTRY),
+            find_matches(
+                f'aws_secret_access_key = "{fx.AWS_SECRET_ACCESS_KEY}"',
+                registry=REGISTRY,
+            ),
             "a.py",
         )[0]
 
@@ -305,7 +335,9 @@ class TestOpenAi:
         assert_silent(f'key = "{value}"', "openai-api-key-legacy")
 
     @pytest.mark.parametrize("prefix", ["sk-proj-", "sk-svcacct-"])
-    def test_a_current_prefix_with_too_short_a_body_is_not_detected(self, prefix: str) -> None:
+    def test_a_current_prefix_with_too_short_a_body_is_not_detected(
+        self, prefix: str
+    ) -> None:
         assert_silent(f'key = "{prefix}SYNTHaB3dE5f"', "openai-api-key")
 
     @pytest.mark.parametrize(
@@ -324,8 +356,13 @@ class TestOpenAi:
     def test_a_stripe_key_is_not_an_openai_key(self, prefix: str) -> None:
         """Stripe's prefixes carry an underscore immediately after ``sk``."""
 
-        assert_silent(f'key = "{prefix}live_SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8"', "openai-api-key")
-        assert_silent(f'key = "{prefix}live_SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8"', "openai-api-key-legacy")
+        assert_silent(
+            f'key = "{prefix}live_SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8"', "openai-api-key"
+        )
+        assert_silent(
+            f'key = "{prefix}live_SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8"',
+            "openai-api-key-legacy",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -353,8 +390,12 @@ class TestGitHub:
         """``ghs_`` and ``ghr_`` are issued for one integration; ``ghp_`` is
         issued to a person and carries that person's access."""
 
-        pat = findings_from(find_matches(f"t = {fx.GITHUB_PAT_CLASSIC}", registry=REGISTRY), "a.py")[0]
-        app = findings_from(find_matches(f"t = {fx.GITHUB_APP_TOKEN}", registry=REGISTRY), "a.py")[0]
+        pat = findings_from(
+            find_matches(f"t = {fx.GITHUB_PAT_CLASSIC}", registry=REGISTRY), "a.py"
+        )[0]
+        app = findings_from(
+            find_matches(f"t = {fx.GITHUB_APP_TOKEN}", registry=REGISTRY), "a.py"
+        )[0]
 
         assert pat.severity is Severity.HIGH
         assert app.severity is Severity.MEDIUM
@@ -368,7 +409,13 @@ class TestGitHub:
             "gh-SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0xaB",  # missing underscore
             "ghp_SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0_aB",  # underscore in the body
         ],
-        ids=["too-short", "too-long", "unknown-prefix", "no-underscore", "underscore-in-body"],
+        ids=[
+            "too-short",
+            "too-long",
+            "unknown-prefix",
+            "no-underscore",
+            "underscore-in-body",
+        ],
     )
     def test_a_malformed_classic_token_is_not_detected(self, value: str) -> None:
         assert_silent(f"t = {value}", "github-pat-classic")
@@ -415,14 +462,18 @@ class TestStripe:
         ],
         ids=["sk-live", "rk-live", "sk-test", "rk-test", "pk-live", "pk-test"],
     )
-    def test_every_stripe_key_family_is_detected(self, value: str, expected: str) -> None:
+    def test_every_stripe_key_family_is_detected(
+        self, value: str, expected: str
+    ) -> None:
         assert_fires(f'STRIPE_KEY = "{value}"', expected)
 
     def test_live_and_test_keys_are_distinguished(self) -> None:
         assert_silent(f'k = "{fx.STRIPE_SECRET_LIVE}"', "stripe-test-key")
         assert_silent(f'k = "{fx.STRIPE_SECRET_TEST}"', "stripe-secret-key-live")
 
-    def test_the_publishable_key_is_low_severity_because_it_is_public_by_design(self) -> None:
+    def test_the_publishable_key_is_low_severity_because_it_is_public_by_design(
+        self,
+    ) -> None:
         """A publishable key is embedded in client applications on purpose and
         appears in every browser that has ever used the site. Reporting it as
         HIGH would be crying wolf about the least sensitive thing in the
@@ -430,7 +481,8 @@ class TestStripe:
         """
 
         finding = findings_from(
-            find_matches(f'k = "{fx.STRIPE_PUBLISHABLE_LIVE}"', registry=REGISTRY), "a.py"
+            find_matches(f'k = "{fx.STRIPE_PUBLISHABLE_LIVE}"', registry=REGISTRY),
+            "a.py",
         )[0]
 
         assert finding.severity is Severity.LOW
@@ -458,7 +510,9 @@ class TestStripe:
         assert {f.severity for f in findings} == set(expected.values())
         assert {f.confidence for f in findings} == {Confidence.HIGH_CONFIDENCE}
 
-    def test_a_test_key_is_still_reported_despite_containing_a_placeholder_word(self) -> None:
+    def test_a_test_key_is_still_reported_despite_containing_a_placeholder_word(
+        self,
+    ) -> None:
         """``test`` is a placeholder word *and* part of a Stripe prefix.
 
         A rule whose own pattern has already established what the value is must
@@ -474,7 +528,8 @@ class TestStripe:
         [
             fx.STRIPE_SECRET_LIVE_PREFIX + "SYNTHaB3dE5fG7",  # 15 characters, one short
             "sk_prod_SYNTHaB3dE5fG7hJ9kL1mN2pQ4rS6tU8",  # unknown environment
-            fx.STRIPE_SECRET_LIVE_PREFIX + "SYNTHaB3dE5fG7h_J9kL1mN2pQ4rS6tU8",  # underscore in body
+            fx.STRIPE_SECRET_LIVE_PREFIX
+            + "SYNTHaB3dE5fG7h_J9kL1mN2pQ4rS6tU8",  # underscore in body
             fx.STRIPE_SECRET_LIVE_PREFIX,  # prefix only
         ],
         ids=["too-short", "bad-environment", "underscore-in-body", "prefix-only"],
@@ -531,7 +586,9 @@ class TestSlack:
             ("https://hooks.slack.com/services/T1/B2/c3", "segments too short"),
         ],
     )
-    def test_an_unrelated_or_malformed_url_is_not_detected(self, url: str, note: str) -> None:
+    def test_an_unrelated_or_malformed_url_is_not_detected(
+        self, url: str, note: str
+    ) -> None:
         assert_silent(f"url = {url!r}", "slack-incoming-webhook", note=note)
 
     def test_the_webhook_is_not_reported_as_a_bare_url_by_entropy(self) -> None:
@@ -597,7 +654,9 @@ class TestPrivateKeys:
         ],
         ids=["certificate", "public-key", "rsa-public", "csr", "new-csr"],
     )
-    def test_a_public_artefact_is_never_a_private_key_finding(self, header: str) -> None:
+    def test_a_public_artefact_is_never_a_private_key_finding(
+        self, header: str
+    ) -> None:
         """Public keys and certificates are designed to be published. Turning
         them into CRITICAL private-key findings would be the most damaging
         false positive this catalog could produce."""
@@ -607,13 +666,17 @@ class TestPrivateKeys:
         assert_silent(text, "private-key-block")
 
     def test_the_finding_is_critical_and_fully_redacted(self) -> None:
-        finding = findings_from(find_matches(fx.PRIVATE_KEY_BLOCK, registry=REGISTRY), "id_rsa")[0]
+        finding = findings_from(
+            find_matches(fx.PRIVATE_KEY_BLOCK, registry=REGISTRY), "id_rsa"
+        )[0]
 
         assert finding.severity is Severity.CRITICAL
         assert finding.masked_value.count("*") == 12
 
     def test_no_part_of_the_key_body_reaches_the_finding(self) -> None:
-        findings = findings_from(find_matches(fx.PRIVATE_KEY_BLOCK, registry=REGISTRY), "id_rsa")
+        findings = findings_from(
+            find_matches(fx.PRIVATE_KEY_BLOCK, registry=REGISTRY), "id_rsa"
+        )
 
         assert fx.PRIVATE_KEY_BODY not in repr(findings)
         assert fx.PRIVATE_KEY_BODY[:32] not in repr(findings)
@@ -693,7 +756,10 @@ class TestDatabaseUris:
         case where suppressing the whole value is the right answer rather than
         a loss."""
 
-        assert_silent(f'DATABASE_URL = "postgres://appuser:{password}@db/prod"', "database-uri-with-password")
+        assert_silent(
+            f'DATABASE_URL = "postgres://appuser:{password}@db/prod"',
+            "database-uri-with-password",
+        )
 
     @pytest.mark.parametrize(
         "password",
@@ -707,8 +773,13 @@ class TestDatabaseUris:
             "ab",  # below the four-character floor
         ],
     )
-    def test_placeholder_and_trivial_passwords_are_not_reported(self, password: str) -> None:
-        assert_silent(f'DATABASE_URL = "postgres://appuser:{password}@db/prod"', "database-uri-with-password")
+    def test_placeholder_and_trivial_passwords_are_not_reported(
+        self, password: str
+    ) -> None:
+        assert_silent(
+            f'DATABASE_URL = "postgres://appuser:{password}@db/prod"',
+            "database-uri-with-password",
+        )
 
     def test_a_weak_but_real_password_is_still_reported(self) -> None:
         """``password`` used as a password is a terrible credential, and a
@@ -721,7 +792,10 @@ class TestDatabaseUris:
         detection.
         """
 
-        assert_fires('DATABASE_URL = "postgres://appuser:password@db/prod"', "database-uri-with-password")
+        assert_fires(
+            'DATABASE_URL = "postgres://appuser:password@db/prod"',
+            "database-uri-with-password",
+        )
 
     def test_a_percent_encoded_password_is_detected(self) -> None:
         """``@`` must be percent-encoded inside a password, so the encoded form
@@ -748,7 +822,9 @@ class TestDatabaseUris:
         assert_silent(f'url = "{uri}"', "database-uri-with-password")
 
     def test_the_finding_is_critical(self) -> None:
-        finding = findings_from(find_matches(f'DATABASE_URL = "{fx.DB_URI}"', registry=REGISTRY), "a.py")[0]
+        finding = findings_from(
+            find_matches(f'DATABASE_URL = "{fx.DB_URI}"', registry=REGISTRY), "a.py"
+        )[0]
 
         assert finding.severity is Severity.CRITICAL
 
@@ -769,12 +845,17 @@ class TestCatalogCrossCutting:
             Severity.CRITICAL,
         }
 
-    def test_exact_rules_are_the_majority_and_heuristics_are_the_exception(self) -> None:
+    def test_exact_rules_are_the_majority_and_heuristics_are_the_exception(
+        self,
+    ) -> None:
         exact = [rule for rule in RULES if rule.specificity is not None]
         from secret_shield.detectors.base import Specificity
 
         assert exact
-        assert sum(1 for r in RULES if r.specificity is Specificity.EXACT) >= len(RULES) - 1
+        assert (
+            sum(1 for r in RULES if r.specificity is Specificity.EXACT)
+            >= len(RULES) - 1
+        )
 
     def test_a_document_containing_many_secrets_is_reported_consistently(self) -> None:
         """Several vendors in one file, one match each, deterministic order."""

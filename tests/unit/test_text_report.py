@@ -61,7 +61,9 @@ def finding_with(**overrides: object) -> Finding:
         "rule_name": "High-entropy string",
         "severity": Severity.MEDIUM,
         "confidence": Confidence.PROBABLE,
-        "location": Location(source_kind=SourceKind.FILE, path="a.py", line=1, column=2),
+        "location": Location(
+            source_kind=SourceKind.FILE, path="a.py", line=1, column=2
+        ),
         "masked_value": REDACTION,
         "value_length": 33,
         "value_fingerprint": "0123456789ab",
@@ -125,7 +127,11 @@ def test_report_states_that_findings_are_not_confirmed_secrets() -> None:
 def test_report_shows_errors_alongside_findings() -> None:
     result = ScanResult(
         findings=detect_entropy(candidates(f'A = "{SYNTHETIC_TOKEN}"\n'), "a.py"),
-        errors=(ScanError("file is not valid UTF-8 text", path="b.bin", code="invalid-encoding"),),
+        errors=(
+            ScanError(
+                "file is not valid UTF-8 text", path="b.bin", code="invalid-encoding"
+            ),
+        ),
         files_scanned=1,
         bytes_scanned=40,
         duration_seconds=0.0,
@@ -202,7 +208,9 @@ def test_missing_entropy_renders_as_not_measured() -> None:
 
 
 def test_advice_is_rendered_once_for_many_findings_from_one_rule() -> None:
-    text = render_text(result_for(f'A = "{SYNTHETIC_TOKEN}"\nB = "{SYNTHETIC_OTHER}"\n'))
+    text = render_text(
+        result_for(f'A = "{SYNTHETIC_TOKEN}"\nB = "{SYNTHETIC_OTHER}"\n')
+    )
 
     assert _header_count(text, "HOW TO RESPOND") == 1
     assert text.count("Entropy alone does not identify a credential") == 1
@@ -352,7 +360,9 @@ def test_fully_redacted_policy_is_used_by_the_entropy_rule() -> None:
     ],
 )
 def test_hostile_filename_cannot_inject_terminal_escapes(name: str) -> None:
-    finding = finding_with(location=Location(source_kind=SourceKind.FILE, path=name, line=1, column=1))
+    finding = finding_with(
+        location=Location(source_kind=SourceKind.FILE, path=name, line=1, column=1)
+    )
 
     text = render_text(ScanResult(findings=(finding,), tool_version=TOOL_VERSION))
 
@@ -375,7 +385,9 @@ def test_hostile_filename_cannot_inject_a_newline() -> None:
     """One finding must always occupy a predictable block of lines."""
 
     finding = finding_with(
-        location=Location(source_kind=SourceKind.FILE, path="a\nb\nSUMMARY\n", line=1, column=1)
+        location=Location(
+            source_kind=SourceKind.FILE, path="a\nb\nSUMMARY\n", line=1, column=1
+        )
     )
 
     text = render_text(ScanResult(findings=(finding,), tool_version=TOOL_VERSION))
@@ -385,7 +397,9 @@ def test_hostile_filename_cannot_inject_a_newline() -> None:
 
 
 def test_hostile_remediation_text_cannot_inject_anything() -> None:
-    finding = finding_with(remediation="\x1b[2J\x1b]0;pwned\x07 rotate it\nFAKE SUMMARY\n")
+    finding = finding_with(
+        remediation="\x1b[2J\x1b]0;pwned\x07 rotate it\nFAKE SUMMARY\n"
+    )
 
     text = render_text(ScanResult(findings=(finding,), tool_version=TOOL_VERSION))
 
@@ -462,7 +476,9 @@ def test_rendering_does_not_modify_the_result() -> None:
     assert result.to_dict() == before
 
 
-def test_report_is_pure_and_does_no_file_io(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_report_is_pure_and_does_no_file_io(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Rendering must not read anything, whatever the path in the result."""
 
     def explode(*args: object, **kwargs: object) -> None:
@@ -473,7 +489,9 @@ def test_report_is_pure_and_does_no_file_io(tmp_path, monkeypatch: pytest.Monkey
     monkeypatch.setattr("builtins.open", explode)
 
     finding = finding_with(
-        location=Location(source_kind=SourceKind.FILE, path="/etc/passwd", line=1, column=1)
+        location=Location(
+            source_kind=SourceKind.FILE, path="/etc/passwd", line=1, column=1
+        )
     )
     text = render_text(ScanResult(findings=(finding,), tool_version=TOOL_VERSION))
 

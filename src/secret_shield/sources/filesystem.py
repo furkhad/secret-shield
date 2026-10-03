@@ -209,14 +209,20 @@ class PathScanConfig:
 
     def __post_init__(self) -> None:
         if not isinstance(self.scan, ScanConfig):
-            raise TypeError(f"scan must be a ScanConfig, got {type(self.scan).__name__}")
+            raise TypeError(
+                f"scan must be a ScanConfig, got {type(self.scan).__name__}"
+            )
         if not isinstance(self.filters, PathFilterConfig):
             raise TypeError(
                 f"filters must be a PathFilterConfig, got {type(self.filters).__name__}"
             )
         if not isinstance(self.binary, BinaryConfig):
-            raise TypeError(f"binary must be a BinaryConfig, got {type(self.binary).__name__}")
-        if self.registry is not None and not isinstance(self.registry, DetectorRegistry):
+            raise TypeError(
+                f"binary must be a BinaryConfig, got {type(self.binary).__name__}"
+            )
+        if self.registry is not None and not isinstance(
+            self.registry, DetectorRegistry
+        ):
             raise TypeError(
                 f"registry must be a DetectorRegistry or None, got "
                 f"{type(self.registry).__name__}"
@@ -330,7 +336,9 @@ class WalkResult:
                         f"{name} must contain only {expected.__name__} instances"
                     )
         if not isinstance(self.truncated, bool):
-            raise TypeError(f"truncated must be a bool, got {type(self.truncated).__name__}")
+            raise TypeError(
+                f"truncated must be a bool, got {type(self.truncated).__name__}"
+            )
 
     def skipped_by(self, reason: SkipReason) -> tuple[str, ...]:
         """Return the relative paths skipped for one specific reason."""
@@ -405,7 +413,11 @@ def walk(root: str | Path, config: PathScanConfig | None = None) -> WalkResult:
     except OSError as exc:
         return WalkResult(
             root=display_root,
-            errors=(_os_error("cannot read directory metadata", display_root, "stat-failed", exc),),
+            errors=(
+                _os_error(
+                    "cannot read directory metadata", display_root, "stat-failed", exc
+                ),
+            ),
         )
 
     files: list[FileEntry] = []
@@ -456,7 +468,9 @@ def walk(root: str | Path, config: PathScanConfig | None = None) -> WalkResult:
             # ignored directory rather than as a symlink, which is the more
             # useful of the two true statements.
             could_be_directory = stat.S_ISDIR(info.st_mode) or is_link
-            decision = settings.filters.decide(name, relative, is_directory=could_be_directory)
+            decision = settings.filters.decide(
+                name, relative, is_directory=could_be_directory
+            )
             if not decision.include:
                 skipped.append(SkippedEntry(relative, _reason_of(decision)))
                 continue
@@ -490,10 +504,14 @@ def walk(root: str | Path, config: PathScanConfig | None = None) -> WalkResult:
                 # Now the containment decision, on its own terms.
                 target = resolve_within(link, resolved)
                 if target is None:
-                    skipped.append(SkippedEntry(relative, SkipReason.SYMLINK_OUTSIDE_ROOT))
+                    skipped.append(
+                        SkippedEntry(relative, SkipReason.SYMLINK_OUTSIDE_ROOT)
+                    )
                     continue
                 if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
-                    skipped.append(SkippedEntry(relative, SkipReason.NOT_A_REGULAR_FILE))
+                    skipped.append(
+                        SkippedEntry(relative, SkipReason.NOT_A_REGULAR_FILE)
+                    )
                     continue
 
             if stat.S_ISDIR(info.st_mode):
@@ -556,7 +574,9 @@ def walk(root: str | Path, config: PathScanConfig | None = None) -> WalkResult:
     return WalkResult(
         root=display_root,
         files=tuple(sorted(files, key=lambda entry: entry.relative)),
-        skipped=tuple(sorted(skipped, key=lambda entry: (entry.relative, entry.reason.value))),
+        skipped=tuple(
+            sorted(skipped, key=lambda entry: (entry.relative, entry.reason.value))
+        ),
         errors=tuple(
             sorted(
                 errors,
@@ -601,13 +621,14 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
     except FileNotFoundError:
         return _result(
             started,
-            errors=(
-                ScanError("path does not exist", path=display, code="not-found"),
-            ),
+            errors=(ScanError("path does not exist", path=display, code="not-found"),),
         )
     except OSError as exc:
         return _result(
-            started, errors=(_os_error("cannot read path metadata", display, "stat-failed", exc),)
+            started,
+            errors=(
+                _os_error("cannot read path metadata", display, "stat-failed", exc),
+            ),
         )
 
     if stat.S_ISREG(info.st_mode):
@@ -658,7 +679,14 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
             started,
             findings=tuple(sorted(findings, key=lambda finding: finding.sort_key)),
             errors=tuple(
-                sorted(errors, key=lambda error: (error.path or "", error.code or "", error.reason))
+                sorted(
+                    errors,
+                    key=lambda error: (
+                        error.path or "",
+                        error.code or "",
+                        error.reason,
+                    ),
+                )
             ),
             files_scanned=files_scanned,
             bytes_scanned=bytes_scanned,
@@ -672,7 +700,10 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
     # for determinism - but when aggregating, we must sort findings by sort_key
     # and errors deterministically regardless of completion order.
     with ThreadPoolExecutor(max_workers=jobs) as executor:
-        futures = [executor.submit(_analyze_file, entry, settings, registry=registry) for entry in walked.files]
+        futures = [
+            executor.submit(_analyze_file, entry, settings, registry=registry)
+            for entry in walked.files
+        ]
         for future in as_completed(futures):
             try:
                 outcome = future.result()
@@ -696,7 +727,10 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
         started,
         findings=tuple(sorted(findings, key=lambda finding: finding.sort_key)),
         errors=tuple(
-            sorted(errors, key=lambda error: (error.path or "", error.code or "", error.reason))
+            sorted(
+                errors,
+                key=lambda error: (error.path or "", error.code or "", error.reason),
+            )
         ),
         files_scanned=files_scanned,
         bytes_scanned=bytes_scanned,
@@ -727,7 +761,9 @@ def _analyze_file(
 
     try:
         with open(entry.path, "rb") as handle:
-            if entry.identity is not None and not _identity_matches(handle, entry.identity):
+            if entry.identity is not None and not _identity_matches(
+                handle, entry.identity
+            ):
                 # The path was a symlink into the root when it was resolved and
                 # points somewhere else now. Refusing is the whole point of the
                 # containment rule, so a swap must not defeat it.
@@ -758,7 +794,9 @@ def _analyze_file(
             handle.seek(0)
             data = handle.read(limit + 1)
 
-            if entry.identity is not None and not _identity_matches(handle, entry.identity):
+            if entry.identity is not None and not _identity_matches(
+                handle, entry.identity
+            ):
                 return FileOutcome(
                     errors=(
                         ScanError(
@@ -772,7 +810,11 @@ def _analyze_file(
     except FileNotFoundError:
         return FileOutcome(
             errors=(
-                ScanError("file disappeared before it could be read", path=display, code="vanished"),
+                ScanError(
+                    "file disappeared before it could be read",
+                    path=display,
+                    code="vanished",
+                ),
             )
         )
     except PermissionError as exc:
@@ -780,7 +822,9 @@ def _analyze_file(
             errors=(_os_error("permission denied", display, "read-failed", exc),)
         )
     except OSError as exc:
-        return FileOutcome(errors=(_os_error("cannot read file", display, "read-failed", exc),))
+        return FileOutcome(
+            errors=(_os_error("cannot read file", display, "read-failed", exc),)
+        )
 
     if len(data) > limit:
         return FileOutcome(
@@ -800,7 +844,11 @@ def _analyze_file(
     except UnicodeDecodeError:
         return FileOutcome(
             errors=(
-                ScanError("file is not valid UTF-8 text", path=display, code="invalid-encoding"),
+                ScanError(
+                    "file is not valid UTF-8 text",
+                    path=display,
+                    code="invalid-encoding",
+                ),
             )
         )
 
@@ -824,7 +872,10 @@ def _analyze_file(
             find_matches(text, rules), display, fingerprint_key=fingerprint_key
         )
         findings = findings + detect_entropy(
-            candidates(capped), display, config.scan.entropy, fingerprint_key=fingerprint_key
+            candidates(capped),
+            display,
+            config.scan.entropy,
+            fingerprint_key=fingerprint_key,
         )
     else:
         findings = analyze_text(
@@ -899,9 +950,13 @@ def _resolve_root(path: Path) -> tuple[Path | None, ScanError | None]:
         return None, ScanError("path does not exist", path=str(path), code="not-found")
     except RuntimeError:
         # A symlink loop at the root itself.
-        return None, ScanError("path is a symlink loop", path=str(path), code="stat-failed")
+        return None, ScanError(
+            "path is a symlink loop", path=str(path), code="stat-failed"
+        )
     except (OSError, ValueError) as exc:
-        return None, _os_error("cannot read path metadata", str(path), "stat-failed", exc)
+        return None, _os_error(
+            "cannot read path metadata", str(path), "stat-failed", exc
+        )
 
     if not resolved.is_dir():
         return None, ScanError(
@@ -999,7 +1054,5 @@ def _coerce_config(config: PathScanConfig | None) -> PathScanConfig:
     if config is None:
         return DEFAULT_PATH_SCAN_CONFIG
     if not isinstance(config, PathScanConfig):
-        raise TypeError(
-            f"config must be a PathScanConfig, got {type(config).__name__}"
-        )
+        raise TypeError(f"config must be a PathScanConfig, got {type(config).__name__}")
     return config

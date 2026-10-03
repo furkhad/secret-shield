@@ -224,9 +224,9 @@ class TestHelpAndVersion:
         stdout = run_cli("--help").stdout
 
         for code in ("0", "1", "2", "3", "4", "130"):
-            assert re.search(rf"^\s+{code}\s", stdout, re.MULTILINE), (
-                f"exit code {code} is not documented in --help"
-            )
+            assert re.search(
+                rf"^\s+{code}\s", stdout, re.MULTILINE
+            ), f"exit code {code} is not documented in --help"
 
     def test_help_offers_examples(self) -> None:
         stdout = run_cli("--help").stdout
@@ -307,9 +307,9 @@ class TestHelpAndVersion:
                 timeout=120,
                 check=False,
             )
-            assert via_script.stdout == via_module.stdout, (
-                f"{flag} differs between python -m and the console script"
-            )
+            assert (
+                via_script.stdout == via_module.stdout
+            ), f"{flag} differs between python -m and the console script"
             assert via_script.returncode == via_module.returncode
 
 
@@ -363,13 +363,15 @@ class TestScanFile:
 
         result = run_cli("scan", str(secret_file))
         masked = [
-            line for line in result.stdout.splitlines() if line.lstrip().startswith("masked")
+            line
+            for line in result.stdout.splitlines()
+            if line.lstrip().startswith("masked")
         ]
 
         assert masked, "the text report should show a masked value"
-        assert masked[0].split(":", 1)[1].strip().strip("*") == "", (
-            "the masked field should contain only mask characters"
-        )
+        assert (
+            masked[0].split(":", 1)[1].strip().strip("*") == ""
+        ), "the masked field should contain only mask characters"
 
     def test_source_line_is_not_quoted(self, secret_file: Path) -> None:
         """No line of the scanned file may appear in the report.
@@ -440,7 +442,9 @@ class TestScanDirectory:
         assert result.returncode == 1
 
     def test_max_files_caps_the_work(self, secret_tree: Path) -> None:
-        result = run_cli("scan", str(secret_tree), "--max-files", "1", "--format", "json")
+        result = run_cli(
+            "scan", str(secret_tree), "--max-files", "1", "--format", "json"
+        )
         payload = json.loads(result.stdout)
 
         assert payload["summary"]["files_scanned"] <= 1
@@ -503,7 +507,9 @@ class TestFormats:
         assert "| Rule |" in result.stdout
         assert_no_synthetic_value(result)
 
-    def test_markdown_escapes_pipes_so_the_table_survives(self, secret_file: Path) -> None:
+    def test_markdown_escapes_pipes_so_the_table_survives(
+        self, secret_file: Path
+    ) -> None:
         """A masked value of asterisks must not break Markdown table layout."""
 
         result = run_cli("scan", str(secret_file), "--format", "markdown")
@@ -573,9 +579,13 @@ class TestOutput:
         assert str(destination) in result.stderr
         assert_no_synthetic_value(result)
 
-    def test_output_file_contains_no_secret(self, secret_file: Path, tmp_path: Path) -> None:
+    def test_output_file_contains_no_secret(
+        self, secret_file: Path, tmp_path: Path
+    ) -> None:
         destination = tmp_path / "report.json"
-        run_cli("scan", str(secret_file), "--format", "json", "--output", str(destination))
+        run_cli(
+            "scan", str(secret_file), "--format", "json", "--output", str(destination)
+        )
 
         for value in FORBIDDEN_VALUES:
             assert value not in destination.read_text(encoding="utf-8")
@@ -586,8 +596,12 @@ class TestOutput:
         """A second run must not append to or corrupt the first report."""
 
         destination = tmp_path / "report.json"
-        run_cli("scan", str(secret_file), "--format", "json", "--output", str(destination))
-        run_cli("scan", str(clean_file), "--format", "json", "--output", str(destination))
+        run_cli(
+            "scan", str(secret_file), "--format", "json", "--output", str(destination)
+        )
+        run_cli(
+            "scan", str(clean_file), "--format", "json", "--output", str(destination)
+        )
 
         assert json.loads(destination.read_text(encoding="utf-8"))["findings"] == []
 
@@ -624,9 +638,7 @@ class TestOutput:
         destination.write_text("PREVIOUS REPORT", encoding="utf-8")
         directory.chmod(0o555)
         try:
-            result = run_cli(
-                "scan", str(secret_file), "--output", str(destination)
-            )
+            result = run_cli("scan", str(secret_file), "--output", str(destination))
         finally:
             directory.chmod(0o755)
 
@@ -641,7 +653,9 @@ class TestOutput:
         destination = tmp_path / "report.json"
         run_cli("scan", str(secret_file), "--output", str(destination))
 
-        leftovers = [name for name in os.listdir(tmp_path) if name.startswith(".secret-shield-")]
+        leftovers = [
+            name for name in os.listdir(tmp_path) if name.startswith(".secret-shield-")
+        ]
         assert leftovers == []
 
     def test_output_replaces_a_symlink_rather_than_following_it(
@@ -709,16 +723,30 @@ class TestThresholds:
 
         payload = json.loads(
             run_cli(
-                "scan", str(secret_file), "--format", "json", "--min-confidence", "verified"
+                "scan",
+                str(secret_file),
+                "--format",
+                "json",
+                "--min-confidence",
+                "verified",
             ).stdout
         )
 
         assert payload["findings"] == []
         assert payload["summary"]["findings_count"] == 0
 
-    def test_min_confidence_keeps_everything_by_default(self, secret_file: Path) -> None:
+    def test_min_confidence_keeps_everything_by_default(
+        self, secret_file: Path
+    ) -> None:
         payload = json.loads(
-            run_cli("scan", str(secret_file), "--format", "json", "--min-confidence", "candidate").stdout
+            run_cli(
+                "scan",
+                str(secret_file),
+                "--format",
+                "json",
+                "--min-confidence",
+                "candidate",
+            ).stdout
         )
 
         assert payload["findings"]
@@ -736,7 +764,9 @@ class TestThresholds:
         underscored = run_cli(
             "scan", str(secret_file), "--min-confidence", "high_confidence"
         )
-        dashed = run_cli("scan", str(secret_file), "--min-confidence", "high-confidence")
+        dashed = run_cli(
+            "scan", str(secret_file), "--min-confidence", "high-confidence"
+        )
 
         assert underscored.stdout == dashed.stdout
         assert underscored.returncode == 1
@@ -920,9 +950,7 @@ class TestExitCodes:
     def test_unknown_subcommand_is_two(self) -> None:
         assert run_cli("audit").returncode == 2
 
-    def test_partial_scan_is_three_and_beats_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_partial_scan_is_three_and_beats_findings(self, tmp_path: Path) -> None:
         """The most important precedence in the tool.
 
         A directory holding one readable secret file and one unreadable one
@@ -1080,7 +1108,12 @@ class TestLimits:
         )
 
         result = run_cli(
-            "scan", str(root), "--project-root", str(root), "--format", "json",
+            "scan",
+            str(root),
+            "--project-root",
+            str(root),
+            "--format",
+            "json",
             env=clean_env(),
         )
 
@@ -1091,7 +1124,9 @@ class TestLimits:
         )
 
     def test_max_file_size_is_accepted(self, clean_file: Path) -> None:
-        assert run_cli("scan", str(clean_file), "--max-file-size", "4096").returncode == 0
+        assert (
+            run_cli("scan", str(clean_file), "--max-file-size", "4096").returncode == 0
+        )
 
     def test_a_tiny_max_file_size_skips_the_file(self, secret_file: Path) -> None:
         """A file over the cap is skipped, so it produces no findings."""
@@ -1209,7 +1244,12 @@ class TestConfiguration:
         )
 
         result = run_cli(
-            "scan", str(root), "--project-root", str(root), "--format", "json",
+            "scan",
+            str(root),
+            "--project-root",
+            str(root),
+            "--format",
+            "json",
             env=clean_env(),
         )
 
@@ -1234,9 +1274,7 @@ class TestConfiguration:
     ) -> None:
         root = tmp_path / "cfg_range"
         root.mkdir()
-        (root / ".secretshield.toml").write_text(
-            "[scan]\njobs = 0\n", encoding="utf-8"
-        )
+        (root / ".secretshield.toml").write_text("[scan]\njobs = 0\n", encoding="utf-8")
 
         result = run_cli(
             "scan", str(secret_file), "--project-root", str(root), env=clean_env()
@@ -1387,14 +1425,15 @@ class TestRulesList:
         assert any(entry["detector"] == "entropy" for entry in payload["rules"])
 
     @pytest.mark.parametrize(
-        "field", ["id", "name", "category", "severity", "base_confidence", "remediation"]
+        "field",
+        ["id", "name", "category", "severity", "base_confidence", "remediation"],
     )
     def test_every_required_field_is_present(self, field: str) -> None:
         payload = json.loads(run_cli("rules", "list", "--format", "json").stdout)
 
-        assert all(entry.get(field) for entry in payload["rules"]), (
-            f"every rule entry must carry a {field}"
-        )
+        assert all(
+            entry.get(field) for entry in payload["rules"]
+        ), f"every rule entry must carry a {field}"
 
     def test_specificity_and_false_positive_notes_are_present(self) -> None:
         payload = json.loads(run_cli("rules", "list", "--format", "json").stdout)
@@ -1557,9 +1596,7 @@ class TestStreamSeparation:
         assert "\x1b" not in result.stdout
         assert "\x1b" not in result.stderr
 
-    def test_a_hostile_filename_cannot_break_the_json(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_hostile_filename_cannot_break_the_json(self, tmp_path: Path) -> None:
         root = tmp_path / "sanitise_json"
         root.mkdir()
         (root / "a\x1b[31mb.py").write_text("X = 1\n", encoding="utf-8")
@@ -1630,7 +1667,15 @@ class TestInterruption:
             )
 
         process = subprocess.Popen(
-            [sys.executable, "-m", "secret_shield", "scan", str(root), "--format", "json"],
+            [
+                sys.executable,
+                "-m",
+                "secret_shield",
+                "scan",
+                str(root),
+                "--format",
+                "json",
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
@@ -1638,7 +1683,9 @@ class TestInterruption:
         time.sleep(0.5)
         if process.poll() is not None:
             stderr = process.communicate()[1]
-            pytest.skip(f"the scan finished before the signal arrived: rc={process.returncode} {stderr!r}")
+            pytest.skip(
+                f"the scan finished before the signal arrived: rc={process.returncode} {stderr!r}"
+            )
 
         process.send_signal(signal.SIGINT)
         _, stderr = process.communicate(timeout=120)
@@ -1683,10 +1730,16 @@ class TestSafety:
         assert "usage:" not in result.stdout
 
     def test_a_very_long_argument_does_not_crash(self, secret_file: Path) -> None:
-        result = run_cli("scan", str(secret_file), "--format", "json", env={
-            **clean_env(),
-            "PAD": "x" * 8192,
-        })
+        result = run_cli(
+            "scan",
+            str(secret_file),
+            "--format",
+            "json",
+            env={
+                **clean_env(),
+                "PAD": "x" * 8192,
+            },
+        )
 
         assert result.returncode in (0, 1)
 
@@ -1722,7 +1775,10 @@ class TestSafety:
         result = run_cli("scan", str(secret_file), "--format", fmt)
         head = SYNTHETIC_AWS_KEY[:4]
 
-        assert head not in result.stdout.replace("AKIA", "", 0) or "AKIA" not in result.stdout
+        assert (
+            head not in result.stdout.replace("AKIA", "", 0)
+            or "AKIA" not in result.stdout
+        )
 
 
 def test_module_entry_point_delegates_and_reuses_one_implementation() -> None:
@@ -1750,6 +1806,7 @@ def test_run_cli_actually_runs_the_cli() -> None:
     assert result.returncode == 0
     assert result.stdout.startswith("secret-shield ")
 
+
 # ---------------------------------------------------------------------------
 # secret-shield git
 # ---------------------------------------------------------------------------
@@ -1757,7 +1814,9 @@ def test_run_cli_actually_runs_the_cli() -> None:
 
 def _git_is_available() -> bool:
     try:
-        subprocess.run(["git", "--version"], capture_output=True, timeout=30, check=False)
+        subprocess.run(
+            ["git", "--version"], capture_output=True, timeout=30, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return False
     return True
@@ -1830,8 +1889,7 @@ def leaky(tmp_path: Path) -> LeakyRepo:
     repo.mkdir()
     build_git(repo, "init", "-q", "-b", "main")
     (repo / "gone.py").write_text(
-        "# a configuration that was later removed\n"
-        f'KEY = "{SYNTHETIC_AWS_KEY}"\n',
+        "# a configuration that was later removed\n" f'KEY = "{SYNTHETIC_AWS_KEY}"\n',
         encoding="utf-8",
     )
     build_git(repo, "add", "-A")
@@ -1957,7 +2015,9 @@ class TestGitExitCodes:
         assert result.returncode == 2
         assert "directory" in result.stderr
 
-    def test_a_directory_that_is_not_a_repository_is_three(self, tmp_path: Path) -> None:
+    def test_a_directory_that_is_not_a_repository_is_three(
+        self, tmp_path: Path
+    ) -> None:
         """A scan that examined nothing cannot pass as a clean scan."""
 
         plain = tmp_path / "plain"
@@ -1990,7 +2050,9 @@ class TestGitExitCodes:
 
         assert "not a Git repository" in result.stdout
 
-    def test_a_truncated_history_is_three_and_beats_findings(self, leaky: LeakyRepo) -> None:
+    def test_a_truncated_history_is_three_and_beats_findings(
+        self, leaky: LeakyRepo
+    ) -> None:
         """The precedence that matters most for a history scan.
 
         Stopping at one commit and reporting findings would leave a reader
@@ -2050,7 +2112,9 @@ class TestGitReporting:
         assert "gone.py" in result.stdout
         assert leaky.leaky_commit[:8] in result.stdout
 
-    def test_the_text_report_names_the_commit_and_the_path(self, leaky: LeakyRepo) -> None:
+    def test_the_text_report_names_the_commit_and_the_path(
+        self, leaky: LeakyRepo
+    ) -> None:
         result = run_cli("git", str(leaky.path))
 
         assert f"gone.py:2:8@{leaky.displayed_commit}" in result.stdout
@@ -2156,7 +2220,10 @@ class TestGitReporting:
         assert_no_synthetic_value(result)
 
     def test_an_unusable_min_confidence_is_two(self, leaky: LeakyRepo) -> None:
-        assert run_cli("git", str(leaky.path), "--min-confidence", "certain").returncode == 2
+        assert (
+            run_cli("git", str(leaky.path), "--min-confidence", "certain").returncode
+            == 2
+        )
 
     def test_fingerprint_is_present_in_json(self, leaky: LeakyRepo) -> None:
         result = run_cli("git", str(leaky.path), "--format", "json")
@@ -2171,7 +2238,9 @@ class TestGitReporting:
         assert first.stdout == second.stdout
 
     def test_an_hmac_fingerprint_needs_a_key(self, leaky: LeakyRepo) -> None:
-        result = run_cli("git", str(leaky.path), "--format", "json", "--fingerprint", "hmac")
+        result = run_cli(
+            "git", str(leaky.path), "--format", "json", "--fingerprint", "hmac"
+        )
 
         assert result.returncode == 2
 
@@ -2202,9 +2271,7 @@ class TestGitReporting:
         (vendored / "index.js").write_text(
             f'var key = "{SYNTHETIC_AWS_KEY}";\n', encoding="utf-8"
         )
-        (repo / "app.py").write_text(
-            f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8"
-        )
+        (repo / "app.py").write_text(f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8")
         build_git(repo, "add", "-f", "-A")
         build_git(repo, "commit", "-qm", "first")
 
@@ -2224,9 +2291,7 @@ class TestGitReporting:
         (vendored / "index.js").write_text(
             f'var key = "{SYNTHETIC_AWS_KEY}";\n', encoding="utf-8"
         )
-        (repo / "app.py").write_text(
-            f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8"
-        )
+        (repo / "app.py").write_text(f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8")
         build_git(repo, "add", "-f", "-A")
         build_git(repo, "commit", "-qm", "first")
 
@@ -2269,7 +2334,9 @@ class TestGitLimitsAndWindow:
     def test_max_commits_is_not_a_number_is_two(self, leaky: LeakyRepo) -> None:
         assert run_cli("git", str(leaky.path), "--max-commits", "many").returncode == 2
 
-    def test_max_commits_past_the_end_is_not_a_truncation(self, leaky: LeakyRepo) -> None:
+    def test_max_commits_past_the_end_is_not_a_truncation(
+        self, leaky: LeakyRepo
+    ) -> None:
         """Nothing was dropped, so exit ``3`` would be a false alarm."""
 
         result = run_cli("git", str(leaky.path), "--max-commits", "1000")

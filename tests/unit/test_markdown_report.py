@@ -6,7 +6,6 @@ from secret_shield.models import (
     DetectorKind,
     Finding,
     Location,
-    ScanError,
     ScanResult,
     Severity,
     SourceKind,
@@ -22,7 +21,9 @@ def make_finding(**kwargs) -> Finding:
         "severity": Severity.MEDIUM,
         "confidence": 0.9,
         "detector": DetectorKind.PATTERN,
-        "location": Location(path="test.py", line=1, column=1, source_kind=SourceKind.FILE),
+        "location": Location(
+            path="test.py", line=1, column=1, source_kind=SourceKind.FILE
+        ),
         "masked_value": "****",
         "value_length": 4,
         "value_fingerprint": "abc123def456",

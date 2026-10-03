@@ -22,7 +22,9 @@ import pytest
 
 _SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 
-if importlib.util.find_spec("secret_shield") is None:  # pragma: no cover - env dependent
+if (
+    importlib.util.find_spec("secret_shield") is None
+):  # pragma: no cover - env dependent
     sys.path.insert(0, str(_SRC_DIR))
 
 # Make ``vendor_fixtures`` importable from anywhere in the suite. pytest puts a

@@ -149,7 +149,9 @@ class TestWalkDeterminism:
             sub.mkdir(exist_ok=True)
             (sub / f"file{index}.py").write_text(f"x = {index}\n", encoding="utf-8")
         (tmp_path / "node_modules").mkdir()
-        (tmp_path / "node_modules" / "skipped.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / "node_modules" / "skipped.py").write_text(
+            "x = 1\n", encoding="utf-8"
+        )
 
         first = walk(tmp_path, config())
         second = walk(tmp_path, config())
@@ -208,7 +210,9 @@ class TestWalkFilters:
         (tmp_path / "build" / "x.py").write_text("x = 1\n", encoding="utf-8")
         (tmp_path / "keep.py").write_text("x = 1\n", encoding="utf-8")
 
-        result = walk(tmp_path, config(filters=PathFilterConfig(ignored_paths=("build",))))
+        result = walk(
+            tmp_path, config(filters=PathFilterConfig(ignored_paths=("build",)))
+        )
         assert [entry.relative for entry in result.files] == ["keep.py"]
         # The directory itself is reported, not each file under it: the walk does
         # not descend, so it never reaches the files to record them individually.
@@ -217,12 +221,16 @@ class TestWalkFilters:
     def test_dotenv_is_scanned(self, tmp_path: Path) -> None:
         """.env is where secrets actually are. Losing it would be a disaster."""
 
-        (tmp_path / ".env").write_text(f'API_KEY="{SYNTHETIC_API_KEY}"\n', encoding="utf-8")
+        (tmp_path / ".env").write_text(
+            f'API_KEY="{SYNTHETIC_API_KEY}"\n', encoding="utf-8"
+        )
         assert [entry.relative for entry in walk(tmp_path, config()).files] == [".env"]
 
     def test_private_key_files_are_candidates(self, tmp_path: Path) -> None:
         for name in ("id_rsa", "server.pem", "key.p12", "cert.crt"):
-            (tmp_path / name).write_text("-----BEGIN PRIVATE KEY-----\n", encoding="utf-8")
+            (tmp_path / name).write_text(
+                "-----BEGIN PRIVATE KEY-----\n", encoding="utf-8"
+            )
         assert len(walk(tmp_path, config()).files) == 4
 
     def test_an_oversized_file_is_skipped_before_reading(self, tmp_path: Path) -> None:
@@ -287,7 +295,9 @@ class TestSymlinksAreNotFollowedByDefault:
         assert [entry.relative for entry in result.files] == ["inside.py"]
         assert result.skipped_by(SkipReason.SYMLINK) == ("alias.py",)
 
-    def test_a_symlinked_directory_is_not_descended(self, roots: tuple[Path, Path]) -> None:
+    def test_a_symlinked_directory_is_not_descended(
+        self, roots: tuple[Path, Path]
+    ) -> None:
         root, _ = roots
         (root / "aliasdir").symlink_to(root)
 
@@ -307,7 +317,9 @@ class TestSymlinksInsideTheRoot:
     def _allowing(self) -> FilesystemScanConfig:
         return config(filters=PathFilterConfig(follow_symlinks=True))
 
-    def test_a_link_to_an_inside_file_is_scanned(self, roots: tuple[Path, Path]) -> None:
+    def test_a_link_to_an_inside_file_is_scanned(
+        self, roots: tuple[Path, Path]
+    ) -> None:
         root, _ = roots
         (root / "alias.py").symlink_to(root / "inside.py")
 
@@ -453,7 +465,9 @@ class TestBadRoots:
             os.mkfifo(tmp_path / "pipe")
         except (AttributeError, OSError):  # pragma: no cover - platform dependent
             pytest.skip("no FIFO support")
-        assert error_codes(walk(tmp_path / "pipe", config())) == ["root-not-a-directory"]
+        assert error_codes(walk(tmp_path / "pipe", config())) == [
+            "root-not-a-directory"
+        ]
 
     @needs_non_root
     def test_an_unreadable_root_is_reported(self, tmp_path: Path) -> None:
@@ -548,7 +562,9 @@ class TestFilesThatDisappear:
         (root / "a.py").write_text("x = 1\n", encoding="utf-8")
         real_scandir = os.scandir
 
-        def scandir_then_fail(path: object = ".", *args: object, **kwargs: object) -> object:
+        def scandir_then_fail(
+            path: object = ".", *args: object, **kwargs: object
+        ) -> object:
             if str(path).endswith("root"):
                 raise FileNotFoundError(path)
             return real_scandir(path)  # type: ignore[arg-type]
@@ -565,7 +581,9 @@ class TestFilesThatDisappear:
         (root / "ok.py").write_text("x = 1\n", encoding="utf-8")
         real_scandir = os.scandir
 
-        def scandir_deny_subdirs(path: object = ".", *args: object, **kwargs: object) -> object:
+        def scandir_deny_subdirs(
+            path: object = ".", *args: object, **kwargs: object
+        ) -> object:
             if str(path).endswith("root"):
                 raise PermissionError(path)
             return real_scandir(path)  # type: ignore[arg-type]
@@ -651,7 +669,9 @@ class TestSymlinkIdentityIsChecked:
         settings = config(filters=PathFilterConfig(follow_symlinks=True))
 
         entry = next(
-            item for item in walk(root, settings).files if item.relative == "inside_link.py"
+            item
+            for item in walk(root, settings).files
+            if item.relative == "inside_link.py"
         )
         assert entry.identity is not None
 
@@ -779,7 +799,9 @@ class TestScanPath:
     def test_a_directory_is_scanned(self, tmp_path: Path) -> None:
         (tmp_path / "a.py").write_text(f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8")
         (tmp_path / "sub").mkdir()
-        (tmp_path / "sub" / "b.py").write_text(f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8")
+        (tmp_path / "sub" / "b.py").write_text(
+            f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8"
+        )
 
         result = scan_path(tmp_path, config())
         assert result.files_scanned == 2
@@ -789,7 +811,9 @@ class TestScanPath:
         """An absolute path in a report leaks the scanner's own directory layout."""
 
         (tmp_path / "sub").mkdir()
-        (tmp_path / "sub" / "leak.py").write_text(f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8")
+        (tmp_path / "sub" / "leak.py").write_text(
+            f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8"
+        )
 
         result = scan_path(tmp_path, config())
         assert {finding.location.path for finding in result.findings} == {"sub/leak.py"}
@@ -803,7 +827,10 @@ class TestScanPath:
         (tmp_path / "z.py").write_text(f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8")
         (tmp_path / "a.py").write_text(f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8")
 
-        paths = [finding.location.path for finding in scan_path(tmp_path, config()).sorted_findings()]
+        paths = [
+            finding.location.path
+            for finding in scan_path(tmp_path, config()).sorted_findings()
+        ]
         assert paths == ["a.py", "z.py"]
 
     def test_the_result_carries_a_version_and_a_duration(self, tmp_path: Path) -> None:
@@ -818,7 +845,9 @@ class TestScanPath:
         for index in range(8):
             sub = tmp_path / f"d{index % 3}"
             sub.mkdir(exist_ok=True)
-            (sub / f"f{index}.py").write_text(f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8")
+            (sub / f"f{index}.py").write_text(
+                f'K = "{SYNTHETIC_API_KEY}"\n', encoding="utf-8"
+            )
 
         assert finding_keys(scan_path(tmp_path, config())) == finding_keys(
             scan_path(tmp_path, config())
@@ -830,7 +859,9 @@ class TestScanPath:
         assert result.files_scanned == 0
         assert result.bytes_scanned == 0
 
-    def test_the_default_config_is_used_when_none_is_given(self, tmp_path: Path) -> None:
+    def test_the_default_config_is_used_when_none_is_given(
+        self, tmp_path: Path
+    ) -> None:
         (tmp_path / "node_modules").mkdir()
         (tmp_path / "node_modules" / "x.py").write_text(f'K = "{SYNTHETIC_API_KEY}"\n')
         assert scan_path(tmp_path).files_scanned == 0
@@ -847,7 +878,9 @@ class TestScanPathFailures:
             os.mkfifo(tmp_path / "pipe")
         except (AttributeError, OSError):  # pragma: no cover - platform dependent
             pytest.skip("no FIFO support")
-        assert error_codes(scan_path(tmp_path / "pipe", config())) == ["not-a-regular-file"]
+        assert error_codes(scan_path(tmp_path / "pipe", config())) == [
+            "not-a-regular-file"
+        ]
 
     def test_an_unstattable_path_is_reported(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -925,9 +958,7 @@ class TestBinaryAndEncoding:
         assert error_codes(result) == ["binary"]
         assert result.files_scanned == 0
 
-    def test_an_undecodable_file_is_reported_as_such(
-        self, tmp_path: Path
-    ) -> None:
+    def test_an_undecodable_file_is_reported_as_such(self, tmp_path: Path) -> None:
         """Distinct from binary, because the remedy is different.
 
         A latin-1 log is a text file with the wrong encoding; telling the user
@@ -964,7 +995,10 @@ class TestBinaryAndEncoding:
         plain_result = scan_path(without, config())
 
         assert len(bom_result.findings) == 1
-        assert bom_result.findings[0].location.column == plain_result.findings[0].location.column
+        assert (
+            bom_result.findings[0].location.column
+            == plain_result.findings[0].location.column
+        )
         assert bom_result.findings[0].location.column == 6
 
     def test_a_binary_file_in_a_directory_does_not_stop_the_scan(
@@ -980,7 +1014,9 @@ class TestBinaryAndEncoding:
 
 
 class TestLongLines:
-    def test_a_long_line_is_reported_as_a_partial_analysis(self, tmp_path: Path) -> None:
+    def test_a_long_line_is_reported_as_a_partial_analysis(
+        self, tmp_path: Path
+    ) -> None:
         """No silent loss: a capped file says so."""
 
         target = tmp_path / "bundle.js"
@@ -1035,7 +1071,9 @@ class TestLongLines:
         """
 
         target = tmp_path / "mixed.js"
-        target.write_text(("x" * 500 + "\n") * 3 + ("y" * 10 + "\n") * 7, encoding="utf-8")
+        target.write_text(
+            ("x" * 500 + "\n") * 3 + ("y" * 10 + "\n") * 7, encoding="utf-8"
+        )
         result = scan_path(target, config(max_line_length=100))
         assert len(result.errors) == 1
         assert "3 line" in result.errors[0].reason
@@ -1098,12 +1136,16 @@ class TestLongLines:
         from tests.vendor_fixtures import AWS_SECRET_ACCESS_KEY  # type: ignore
 
         target = tmp_path / "config.env"
-        target.write_text(f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"\n', encoding="utf-8")
+        target.write_text(
+            f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"\n', encoding="utf-8"
+        )
 
         result = scan_path(target, config(max_line_length=100))
 
         assert result.errors == ()
-        assert [finding.rule_id for finding in result.findings] == ["aws-secret-access-key"]
+        assert [finding.rule_id for finding in result.findings] == [
+            "aws-secret-access-key"
+        ]
         assert result.findings[0].detector is DetectorKind.COMPOSITE
 
     def test_a_capped_file_still_loses_no_detection(self, tmp_path: Path) -> None:
@@ -1175,7 +1217,9 @@ class TestStatistics:
         assert result.files_scanned == 1
         assert result.bytes_scanned == 0
 
-    def test_files_scanned_can_be_below_the_candidate_count(self, tmp_path: Path) -> None:
+    def test_files_scanned_can_be_below_the_candidate_count(
+        self, tmp_path: Path
+    ) -> None:
         """A binary candidate was found but not analysed."""
 
         (tmp_path / "a.blob").write_bytes(b"\x00" * 100)
@@ -1224,7 +1268,7 @@ class TestSingleFileUsesEveryRule:
         from secret_shield.scanner import scan_file
 
         target = tmp_path / "blob.txt"
-        body = "value = \"f8Kq2mZ9tR4vX7bN1cL6wY3hJ5pA0sD2fG4hJ6kL8\"\n"
+        body = 'value = "f8Kq2mZ9tR4vX7bN1cL6wY3hJ5pA0sD2fG4hJ6kL8"\n'
         target.write_text(body, encoding="utf-8")
 
         assert len(scan_file(target).findings) >= 1
@@ -1303,7 +1347,9 @@ class TestErrorsCarryNoContent:
         hostile = "evil\n\x1b[31mFAKE LOG LINE\x1b[0m.py"
         (tmp_path / hostile).write_bytes(b"\x89PNG" + bytes(8))
 
-        result = walk(tmp_path, config(filters=PathFilterConfig(ignored_extensions=(".py",))))
+        result = walk(
+            tmp_path, config(filters=PathFilterConfig(ignored_extensions=(".py",)))
+        )
         for entry in result.skipped:
             assert "\x1b" not in entry.reason.description
             assert "\n" not in entry.reason.description

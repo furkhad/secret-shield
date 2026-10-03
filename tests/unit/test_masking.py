@@ -172,7 +172,9 @@ def test_mask_rejects_bool_budgets() -> None:
         mask(SYNTHETIC_TOKEN, True, 0)  # type: ignore[arg-type]
 
 
-def test_mask_writes_nothing_to_the_terminal(capsys: pytest.CaptureFixture[str]) -> None:
+def test_mask_writes_nothing_to_the_terminal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     mask(SYNTHETIC_TOKEN, 4, 4)
     fingerprint(SYNTHETIC_TOKEN)
     sanitize_excerpt(f"token = {SYNTHETIC_TOKEN}", [(8, 48)])
@@ -245,7 +247,10 @@ def test_fingerprint_reveals_nothing_about_the_value() -> None:
     """No window of the secret survives in the digest."""
 
     result = fingerprint(SYNTHETIC_SECRET)
-    windows = {SYNTHETIC_SECRET[index : index + 4] for index in range(len(SYNTHETIC_SECRET) - 3)}
+    windows = {
+        SYNTHETIC_SECRET[index : index + 4]
+        for index in range(len(SYNTHETIC_SECRET) - 3)
+    }
 
     assert SYNTHETIC_SECRET not in result
     assert result not in SYNTHETIC_SECRET
@@ -256,8 +261,12 @@ def test_hmac_key_changes_the_fingerprint() -> None:
     key = b"per-run-key"
 
     assert fingerprint(SYNTHETIC_SECRET, key=key) != fingerprint(SYNTHETIC_SECRET)
-    assert fingerprint(SYNTHETIC_SECRET, key=key) == fingerprint(SYNTHETIC_SECRET, key=key)
-    assert fingerprint(SYNTHETIC_SECRET, key=key) != fingerprint(SYNTHETIC_SECRET, key=b"other")
+    assert fingerprint(SYNTHETIC_SECRET, key=key) == fingerprint(
+        SYNTHETIC_SECRET, key=key
+    )
+    assert fingerprint(SYNTHETIC_SECRET, key=key) != fingerprint(
+        SYNTHETIC_SECRET, key=b"other"
+    )
 
 
 def test_fingerprint_rejects_an_empty_key() -> None:
@@ -311,7 +320,10 @@ def test_normalize_spans_sorts_and_merges() -> None:
 
 
 def test_normalize_spans_clips_to_the_line() -> None:
-    assert normalize_spans([(-10, 4), (95, 500)], line_length=100) == ((0, 4), (95, 100))
+    assert normalize_spans([(-10, 4), (95, 500)], line_length=100) == (
+        (0, 4),
+        (95, 100),
+    )
 
 
 def test_normalize_spans_drops_empty_ranges() -> None:
@@ -322,7 +334,9 @@ def test_normalize_spans_accepts_lists() -> None:
     assert normalize_spans([[0, 3]], line_length=10) == ((0, 3),)
 
 
-@pytest.mark.parametrize("span", [(1,), (1, 2, 3), "ab", (None, 2), (1, "2"), (True, 2)])
+@pytest.mark.parametrize(
+    "span", [(1,), (1, 2, 3), "ab", (None, 2), (1, "2"), (True, 2)]
+)
 def test_normalize_spans_rejects_malformed_spans(span: object) -> None:
     with pytest.raises(TypeError):
         normalize_spans([span], line_length=10)  # type: ignore[list-item]
@@ -390,7 +404,9 @@ def test_sanitize_excerpt_removes_control_characters() -> None:
 
 
 def test_sanitize_excerpt_accepts_a_custom_marker() -> None:
-    assert sanitize_excerpt("abcdef", [(0, 3)], redaction="<redacted>") == "<redacted>def"
+    assert (
+        sanitize_excerpt("abcdef", [(0, 3)], redaction="<redacted>") == "<redacted>def"
+    )
 
 
 def test_sanitize_excerpt_rejects_a_non_string_line() -> None:

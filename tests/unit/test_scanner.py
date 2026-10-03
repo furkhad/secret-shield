@@ -69,7 +69,9 @@ def test_statistics_reflect_the_file_actually_read(tmp_path: Path) -> None:
 
 
 def test_several_findings_are_reported(tmp_path: Path) -> None:
-    content = f'A = "{SYNTHETIC_TOKEN}"\nB = "{SYNTHETIC_OTHER}"\nC = "{SYNTHETIC_HEX}"\n'
+    content = (
+        f'A = "{SYNTHETIC_TOKEN}"\nB = "{SYNTHETIC_OTHER}"\nC = "{SYNTHETIC_HEX}"\n'
+    )
     target = write(tmp_path, "many.py", content)
 
     result = scan_file(target)
@@ -101,7 +103,9 @@ def test_findings_are_capped_at_medium_with_probable_confidence(tmp_path: Path) 
 
 
 def test_utf8_content_is_handled(tmp_path: Path) -> None:
-    target = write(tmp_path, "unicode.py", f'# café naïve 日本語\nA = "{SYNTHETIC_TOKEN}"\n')
+    target = write(
+        tmp_path, "unicode.py", f'# café naïve 日本語\nA = "{SYNTHETIC_TOKEN}"\n'
+    )
 
     result = scan_file(target)
 
@@ -159,7 +163,7 @@ def test_unreadable_file_is_a_scan_error(tmp_path: Path) -> None:
 
 
 def test_invalid_utf8_is_a_scan_error(tmp_path: Path) -> None:
-    target = write(tmp_path, "latin1.py", b'# caf\xe9 na\xefve\nA = 1\n')
+    target = write(tmp_path, "latin1.py", b"# caf\xe9 na\xefve\nA = 1\n")
 
     result = scan_file(target)
 
@@ -169,7 +173,9 @@ def test_invalid_utf8_is_a_scan_error(tmp_path: Path) -> None:
 
 
 def test_binary_content_is_a_scan_error(tmp_path: Path) -> None:
-    target = write(tmp_path, "blob.bin", b"\x7fELF\x02\x01\x00\x00\x00binary\x00payload")
+    target = write(
+        tmp_path, "blob.bin", b"\x7fELF\x02\x01\x00\x00\x00binary\x00payload"
+    )
 
     result = scan_file(target)
 

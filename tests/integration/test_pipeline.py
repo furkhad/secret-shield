@@ -35,7 +35,6 @@ import pytest
 
 from secret_shield.detectors import (
     DetectorRegistry,
-    EntropyCandidate,
     Rule,
     Specificity,
     find_matches,
@@ -156,21 +155,41 @@ class TestWhereTheStructuralFiltersFireFirst:
 
     PREFIXED = [
         ("github-pat", f'GITHUB_TOKEN = "{GITHUB_PAT_CLASSIC}"', "github-pat-classic"),
-        ("github-oauth", f'GITHUB_TOKEN = "{GITHUB_OAUTH_TOKEN}"', "github-pat-classic"),
-        ("stripe-live", f'STRIPE_KEY = "{STRIPE_SECRET_LIVE}"', "stripe-secret-key-live"),
+        (
+            "github-oauth",
+            f'GITHUB_TOKEN = "{GITHUB_OAUTH_TOKEN}"',
+            "github-pat-classic",
+        ),
+        (
+            "stripe-live",
+            f'STRIPE_KEY = "{STRIPE_SECRET_LIVE}"',
+            "stripe-secret-key-live",
+        ),
         (
             "stripe-publishable",
             f'STRIPE_KEY = "{STRIPE_PUBLISHABLE_LIVE}"',
             "stripe-publishable-key",
         ),
-        ("openai-project", f'OPENAI_API_KEY = "{OPENAI_PROJECT_KEY}"', "openai-api-key"),
-        ("openai-legacy", f'OPENAI_API_KEY = "{OPENAI_LEGACY_KEY}"', "openai-api-key-legacy"),
+        (
+            "openai-project",
+            f'OPENAI_API_KEY = "{OPENAI_PROJECT_KEY}"',
+            "openai-api-key",
+        ),
+        (
+            "openai-legacy",
+            f'OPENAI_API_KEY = "{OPENAI_LEGACY_KEY}"',
+            "openai-api-key-legacy",
+        ),
         (
             "openai-service-account",
             f'OPENAI_API_KEY = "{OPENAI_SERVICE_ACCOUNT_KEY}"',
             "openai-api-key",
         ),
-        ("slack-webhook", f'SLACK_WEBHOOK = "{SLACK_WEBHOOK}"', "slack-incoming-webhook"),
+        (
+            "slack-webhook",
+            f'SLACK_WEBHOOK = "{SLACK_WEBHOOK}"',
+            "slack-incoming-webhook",
+        ),
     ]
 
     @pytest.mark.parametrize(
@@ -213,7 +232,9 @@ class TestWhereTheStructuralFiltersFireFirst:
         ):
             assert has_non_secret_structure(value), value
 
-    def test_a_wider_literal_around_a_prefixed_key_does_reach_the_entropy_rule(self) -> None:
+    def test_a_wider_literal_around_a_prefixed_key_does_reach_the_entropy_rule(
+        self,
+    ) -> None:
         """The control: widen the literal and the filters stop applying.
 
         Whitespace around the value defeats the identifier heuristics, so the
@@ -293,7 +314,7 @@ class TestContextSurvivesFusion:
     """
 
     def test_a_placeholder_produces_nothing(self) -> None:
-        text = f'AWS_SECRET_ACCESS_KEY = "YOUR_SECRET_ACCESS_KEY_HERE_000000000000"'
+        text = 'AWS_SECRET_ACCESS_KEY = "YOUR_SECRET_ACCESS_KEY_HERE_000000000000"'
 
         assert analyze_text(text, "config.env") == ()
 
@@ -302,7 +323,9 @@ class TestContextSurvivesFusion:
 
         assert analyze_text(text, "config.env") == ()
 
-    def test_a_placeholder_shaped_stripe_test_key_survives_where_the_rule_allows(self) -> None:
+    def test_a_placeholder_shaped_stripe_test_key_survives_where_the_rule_allows(
+        self,
+    ) -> None:
         """The Stripe test-key exception, which fusion must not extend.
 
         ``stripe-test-key`` sets ``suppress_placeholders=False``: a test key is
@@ -328,9 +351,9 @@ class TestContextSurvivesFusion:
         evaluated inside the rule, before fusion runs.
         """
 
-        assert find_matches(f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"')[0].confidence() is (
-            Confidence.PROBABLE
-        )
+        assert find_matches(f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"')[
+            0
+        ].confidence() is (Confidence.PROBABLE)
         assert find_matches(f'blob = "{AWS_SECRET_ACCESS_KEY}"') == []
 
     def test_a_heuristic_rule_without_context_still_reaches_the_pipeline(self) -> None:
@@ -365,7 +388,9 @@ class TestContextSurvivesFusion:
         alone = find_matches(text, DetectorRegistry(rules=(rule,)))
         assert alone[0].confidence() is Confidence.HIGH_CONFIDENCE
 
-        fused = analyze_text(text, "config.env", registry=DetectorRegistry(rules=(rule,)))
+        fused = analyze_text(
+            text, "config.env", registry=DetectorRegistry(rules=(rule,))
+        )
         assert len(fused) == 1
         assert fused[0].detector is DetectorKind.COMPOSITE
         # The rule already reached the ceiling on its own evidence; fusion could
@@ -394,12 +419,15 @@ class TestContextSurvivesFusion:
         assert rule.confidence_floor is Confidence.CANDIDATE
 
         # No assignment name and no keyword: the rule alone cannot do better.
-        bare = find_matches(f'"{AWS_SECRET_ACCESS_KEY}"', DetectorRegistry(rules=(rule,)))
+        bare = find_matches(
+            f'"{AWS_SECRET_ACCESS_KEY}"', DetectorRegistry(rules=(rule,))
+        )
         assert bare[0].confidence() is Confidence.CANDIDATE
 
         # The assignment name is the context the rule counts.
         named = find_matches(
-            f'acme_loose_key = "{AWS_SECRET_ACCESS_KEY}"', DetectorRegistry(rules=(rule,))
+            f'acme_loose_key = "{AWS_SECRET_ACCESS_KEY}"',
+            DetectorRegistry(rules=(rule,)),
         )
         assert named[0].confidence() is Confidence.PROBABLE
 
@@ -420,7 +448,9 @@ class TestContextSurvivesFusion:
         prefix to a documented length. Fusion's job is to leave that alone.
         """
 
-        findings = analyze_text(f'GITHUB_TOKEN = "  {GITHUB_PAT_CLASSIC}  "', "config.env")
+        findings = analyze_text(
+            f'GITHUB_TOKEN = "  {GITHUB_PAT_CLASSIC}  "', "config.env"
+        )
 
         assert findings[0].confidence is Confidence.HIGH_CONFIDENCE
         assert findings[0].detector is DetectorKind.COMPOSITE
@@ -467,7 +497,9 @@ class TestContextSurvivesFusion:
         assert find_matches(text, DetectorRegistry(rules=(rule,))) == []
         assert not any(
             finding.rule_id == "acme-hash-shaped"
-            for finding in analyze_text(text, "config.env", registry=DetectorRegistry(rules=(rule,)))
+            for finding in analyze_text(
+                text, "config.env", registry=DetectorRegistry(rules=(rule,))
+            )
         )
 
     def test_the_same_rule_without_reject_hashes_does_match(self) -> None:
@@ -491,7 +523,9 @@ class TestContextSurvivesFusion:
         )
         text = f'ACME_KEY = "{digest}"'
 
-        findings = analyze_text(text, "config.env", registry=DetectorRegistry(rules=(lenient,)))
+        findings = analyze_text(
+            text, "config.env", registry=DetectorRegistry(rules=(lenient,))
+        )
 
         assert [finding.rule_id for finding in findings] == ["acme-hash-shaped"]
 
@@ -509,7 +543,7 @@ class TestAnalyzeTextContract:
         assert len(analyze_text(f'K = "{AWS_ACCESS_KEY_ID}"', "config.env")) == 1
 
     def test_a_positioned_finding_is_pointed_at_correctly(self) -> None:
-        text = f"# header\nDEBUG = 1\naws_access_key_id = \"{AWS_ACCESS_KEY_ID}\"\n"
+        text = f'# header\nDEBUG = 1\naws_access_key_id = "{AWS_ACCESS_KEY_ID}"\n'
 
         finding = analyze_text(text, "config.env")[0]
 
@@ -543,14 +577,25 @@ class TestAnalyzeTextContract:
         assert analyze_text(text, "config.env") == analyze_text(text, "config.env")
 
     def test_hostile_text_does_not_raise(self) -> None:
-        for text in ('"', "'", "\\", "\x00", "\ud800", "a" * 100_000, "\n" * 1000, "=" * 5000):
+        for text in (
+            '"',
+            "'",
+            "\\",
+            "\x00",
+            "\ud800",
+            "a" * 100_000,
+            "\n" * 1000,
+            "=" * 5000,
+        ):
             analyze_text(text, "hostile.py")  # must not raise
 
     @pytest.mark.parametrize(
         ("value", "message"),
         [(b"bytes", "bytes"), (None, "NoneType"), (42, "int")],
     )
-    def test_a_non_string_text_is_rejected_by_type(self, value: object, message: str) -> None:
+    def test_a_non_string_text_is_rejected_by_type(
+        self, value: object, message: str
+    ) -> None:
         """The error names the type, which is the part a caller can act on."""
 
         with pytest.raises(TypeError, match=message):
@@ -583,7 +628,7 @@ class TestNoRawSecretEscapesEndToEnd:
         f'DATABASE_URL = "{DB_URI}"',
         f'GITHUB_TOKEN = "{GITHUB_PAT_CLASSIC}"',
         f'STRIPE_KEY = "{STRIPE_SECRET_LIVE}"',
-        f'SIGNING_HMAC = "f8Kq2mZ9tR4vX7bN1cL6wY3hJ5pA0sD2fG4hJ6kL8"',
+        'SIGNING_HMAC = "f8Kq2mZ9tR4vX7bN1cL6wY3hJ5pA0sD2fG4hJ6kL8"',
     ]
 
     SECRETS = (
@@ -660,7 +705,7 @@ class TestSpansAreExact:
         from secret_shield.detectors import entropy_candidates
 
         text = f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"'
-        token, = [
+        (token,) = [
             candidate
             for candidate in entropy_candidates(candidates(text))
             if candidate.value == AWS_SECRET_ACCESS_KEY
@@ -696,13 +741,13 @@ class TestSpansAreExact:
         """
 
         text = 'e = "a\\nb"'
-        token, = candidates(text)
+        (token,) = candidates(text)
 
         assert token.value == "anb"
         assert token.length == 3
         assert token.span == (5, 9)
         assert token.span[1] - token.span[0] == 4
-        assert text[slice(*token.span)] == 'a\\nb'
+        assert text[slice(*token.span)] == "a\\nb"
 
     def test_an_entropy_candidate_becomes_a_finding_through_its_own_path(self) -> None:
         """``to_finding`` is the conversion ``detect`` and fusion both use."""
@@ -807,7 +852,9 @@ class TestCustomRules:
         assert [finding.rule_id for finding in findings] == ["high-entropy-string"]
 
     def test_an_entropy_candidate_with_no_rule_at_all_is_still_reported(self) -> None:
-        findings = analyze_text(self.PADDED_TEXT, "config.env", registry=DetectorRegistry(rules=()))
+        findings = analyze_text(
+            self.PADDED_TEXT, "config.env", registry=DetectorRegistry(rules=())
+        )
 
         assert [finding.detector for finding in findings] == [DetectorKind.ENTROPY]
         assert findings[0].severity is Severity.MEDIUM
