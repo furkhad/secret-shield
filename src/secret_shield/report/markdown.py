@@ -84,7 +84,10 @@ def render_markdown(result: ScanResult, *, include_fingerprint: bool = True) -> 
         for f in findings:
             rule = _escape_table_cell(f"{f.rule_name} ({f.rule_id})")
             sev = _escape_table_cell(f.severity.label)
-            loc = _escape_table_cell(f"{f.location.path}:{f.location.line}:{f.location.column}")
+            # ``to_display`` rather than a hand-built path:line:column, so a
+            # history finding carries its commit and a finding with no line
+            # number does not print "path:None:None".
+            loc = _escape_table_cell(f.location.to_display())
             masked = _escape_table_cell(f.masked_value)
             detail_parts = [
                 f"len={f.value_length}",

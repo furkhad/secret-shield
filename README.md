@@ -4,12 +4,13 @@ SecretShield is a Python security scanner for detecting accidentally exposed sec
 
 ## Status
 
-**Stage 8 — a working CLI over vendor rules, directory traversal and layered
-configuration. No Git history scanning.**
+**Stage 9 — a working CLI over vendor rules, directory traversal, layered
+configuration and Git history.**
 
 ```bash
 secret-shield scan .
 secret-shield scan src --format json --output report.json
+secret-shield git .                     # also finds what was deleted
 secret-shield rules list
 ```
 
@@ -30,9 +31,9 @@ issuing service, so every finding is something a human should look at.
 | `pipeline` — match fusion, context scoring, dedup | Done, tested |
 | `config` — layered settings: defaults, file, environment, overrides | Done, tested |
 | `sources/` — filesystem traversal | Done, tested |
+| `sources/` — Git history scanning | Done, tested |
 | `report` — `render_text`, `render_json`, `render_markdown` | Done, tested |
 | `cli` — argparse front end, exit codes, atomic `--output` | Done, tested |
-| Git history scanning | Not started |
 | SARIF, baselines, allowlists | Not started |
 
 ## Command line
@@ -133,6 +134,60 @@ setting, an out-of-range value or an unknown rule id is an error rather than
 being silently ignored — a misspelled limit that is quietly dropped applies a
 limit nobody set.
 
+### Git history
+
+`scan` reads what is on disk. A credential that was committed and then deleted
+is not on disk, so `scan` cannot see it — which is the usual way a real leak
+survives a cleanup commit. `git` reads the history instead:
+
+```bash
+secret-shield git .
+secret-shield git . --format json --output history.json
+secret-shield git ~/work/repo --since "2 years ago" --fail-on high
+```
+
+It is a separate subcommand rather than a `scan` flag, because it answers a
+different question about a different object. Both share the reporters, the
+detectors and the exit-code contract, so a finding reads the same either way.
+
+**What it does.** Git names every blob reachable from `HEAD` and the paths it
+was committed at (`git log --raw`, a names-only pass that moves no file content),
+the references are reduced to the *distinct* blobs, and the survivors' contents
+are streamed back once each (`git cat-file`). Every blob is analysed by the same
+pipeline that `scan` uses, labelled `source_kind = "git"`. Each finding names
+the newest commit in which that content was present at that path, and reads
+`path:line:column@commit` — the reference an editor or `git blame` understands.
+
+**Each blob is read once.** A repository that moves a large vendored file
+across a thousand commits stores one object, not a thousand. Blobs are keyed by
+object id, so history is scanned once per *distinct* object no matter how many
+commits or paths reference it; the remaining references are counted rather than
+re-analysed. This is what makes the scan of a large repository finish at all.
+A blob that was current at one path and historical at another yields one finding
+per path, each attributed to the newest commit at that path.
+
+**It reads; it does not touch.** Nothing is checked out, written, fetched or
+referenced, and no ref, index or working-tree file is modified — `git status`
+afterwards is identical to `git status` before. The only Git subcommands invoked
+are the read-only `rev-parse`, `log` and `cat-file`. No command is built as a
+string, so there is no shell to inject into; every invocation is an argv list
+with `shell=False` and an explicit timeout. A revision beginning with `-` is
+rejected rather than passed on, so it cannot become an option.
+
+**Today's ignore rules do not apply.** A path ignored now may not have been
+ignored when the secret was committed, and skipping it would be exactly the
+wrong answer. `--respect-path-filters` opts into the same default filtering
+that `scan` uses — `node_modules`, `.venv`, `__pycache__` and the rest — and
+to nothing beyond it.
+
+**Coverage is reported, not assumed.** When part of the history is not examined,
+a stderr line says how many commits were walked, how many distinct objects were
+actually searched, and what was skipped — binary blobs, oversized blobs, paths
+over the length limit — or that history was truncated by `--max-commits`. The
+line is silent when nothing was skipped, so its absence means everything
+reachable from `HEAD` was searched. Anything genuinely unreadable is an error,
+not a silent skip, so a partial result always says so.
+
 ## Goals
 
 - Detect common API keys, tokens, passwords, private keys, and database credentials
@@ -224,7 +279,9 @@ src/secret_shield/          # src layout: tests cannot import repo files by acci
 │   └── entropy_rule.py     # the entropy screen
 ├── filters/                # binary sniffing, path exclusion
 ├── sources/
-│   └── filesystem.py       # scan_path(): directory traversal
+│   ├── filesystem.py       # scan_path(): directory traversal
+│   ├── git_cmd.py          # the only module that runs Git; no shell, always argv
+│   └── git_history.py      # scan_history(): blobs reachable from HEAD
 └── report/                 # ScanResult -> str; no I/O, no colours
     ├── text.py
     ├── json_report.py
@@ -237,8 +294,7 @@ tests/
 └── functional/             # the CLI, run as a subprocess
 ```
 
-Modules still to come: `sources/git.py` (history scanning), SARIF output,
-baselines, and allowlists.
+Modules still to come: SARIF output, baselines, and allowlists.
 
 ## Development
 
@@ -292,6 +348,37 @@ a token — that is the cost of a rule that works on values no vendor claims.
 
 If you believe you have found a real credential in this repository, please
 report it privately rather than opening a public issue.
+
+## Known limits
+
+Stated plainly, because a limit you know about is a decision you can make and a
+limit you discover in CI is a surprise.
+
+- **Git history scanning reads SHA-1 repositories only.** A repository created
+  with `--object-format=sha256` is detected and refused with
+  `unsupported-object-format`, not mis-scanned. Git's SHA-256 support is not
+  yet universal, and a scan that silently walked nothing would look identical to
+  a clean repository.
+- **Only `HEAD` is scanned.** Branches, tags, reflog entries, stashes and
+  dangling objects that are not reachable from `HEAD` are not visited. A secret
+  on an abandoned branch is a real leak this will not find.
+- **No object is written, so nothing is cleaned.** This tool reports; it does
+  not rewrite history. Removing a leaked credential from Git requires rewriting
+  history and rotating the credential, and rotating the credential is the part
+  that actually matters — a leaked key that was never used is still leaked once
+  it was pushed.
+- **History is unbounded by default.** `git` reads every commit reachable from
+  `HEAD` with no commit limit, which on a multi-gigabyte repository is a long
+  scan. `--max-commits`, `--max-blobs` and `--max-refs` bound it, and the
+  coverage line reports when a bound was hit.
+- **Blobs over `--max-blob-size` (10 MiB) are not read.** They are counted and
+  named in the coverage line rather than read into memory.
+- **Binary blobs are not searched.** There is no text to scan, and forcing
+  bytes through the tokenizer produces noise, not findings.
+- **Config-file limits do not apply to `git`.** `secret-shield git` takes its
+  limits on the command line and does not read `.secretshield.toml`, so a
+  history scan cannot be silently reshaped by a repository-local file that the
+  scanner is about to audit.
 
 ## License
 

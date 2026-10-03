@@ -36,6 +36,7 @@ imported from :mod:`tests.vendor_fixtures`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -1748,3 +1749,697 @@ def test_run_cli_actually_runs_the_cli() -> None:
 
     assert result.returncode == 0
     assert result.stdout.startswith("secret-shield ")
+
+# ---------------------------------------------------------------------------
+# secret-shield git
+# ---------------------------------------------------------------------------
+
+
+def _git_is_available() -> bool:
+    try:
+        subprocess.run(["git", "--version"], capture_output=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+GIT_AVAILABLE = _git_is_available()
+needs_git = pytest.mark.skipif(not GIT_AVAILABLE, reason="git is not installed")
+
+
+GIT_FIXTURE_ENVIRONMENT: dict[str, str] = {
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_AUTHOR_NAME": "CLI Test",
+    "GIT_AUTHOR_EMAIL": "cli@example.invalid",
+    "GIT_COMMITTER_NAME": "CLI Test",
+    "GIT_COMMITTER_EMAIL": "cli@example.invalid",
+    "GIT_AUTHOR_DATE": "2024-01-01T00:00:00+0000",
+    "GIT_COMMITTER_DATE": "2024-01-01T00:00:00+0000",
+    "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    "HOME": os.devnull,
+    "LC_ALL": "C",
+}
+
+
+def build_git(repo: Path, *arguments: str) -> str:
+    """Run ``git`` in ``repo`` with a scrubbed environment and return stdout."""
+
+    completed = subprocess.run(
+        ["git", "-C", str(repo), *arguments],
+        env=GIT_FIXTURE_ENVIRONMENT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(f"git {' '.join(arguments)} failed: {completed.stderr}")
+    return completed.stdout.strip()
+
+
+@dataclasses.dataclass(frozen=True)
+class LeakyRepo:
+    """A repository whose history holds a secret the working tree does not.
+
+    The commit name is held here rather than in a file inside the repository:
+    an extra file would make ``git status`` dirty, and one of the tests below
+    exists precisely to assert that a scan leaves the tree clean.
+    """
+
+    path: Path
+    leaky_commit: str
+
+    @property
+    def displayed_commit(self) -> str:
+        """The commit as the human-facing reports abbreviate it.
+
+        ``Location.to_display`` shortens a commit to twelve characters, so the
+        text and Markdown reports cannot carry all forty. Asserting the full
+        name against those reports would encode a promise they never made.
+        """
+
+        return self.leaky_commit[:12]
+
+
+@pytest.fixture
+def leaky(tmp_path: Path) -> LeakyRepo:
+    """A credential committed and then deleted, so only the history holds it."""
+
+    repo = tmp_path / "leaky"
+    repo.mkdir()
+    build_git(repo, "init", "-q", "-b", "main")
+    (repo / "gone.py").write_text(
+        "# a configuration that was later removed\n"
+        f'KEY = "{SYNTHETIC_AWS_KEY}"\n',
+        encoding="utf-8",
+    )
+    build_git(repo, "add", "-A")
+    build_git(repo, "commit", "-qm", "add configuration")
+    leaky_commit = build_git(repo, "rev-parse", "HEAD")
+    build_git(repo, "rm", "-q", "gone.py")
+    build_git(repo, "commit", "-qm", "remove it")
+    (repo / "README.md").write_text("# clean\n", encoding="utf-8")
+    build_git(repo, "add", "-A")
+    build_git(repo, "commit", "-qm", "add a readme")
+    assert build_git(repo, "status", "--porcelain") == ""
+    return LeakyRepo(path=repo, leaky_commit=leaky_commit)
+
+
+@needs_git
+class TestGitHelpAndDiscovery:
+    def test_help_lists_the_git_subcommand(self) -> None:
+        """A capability nobody can find is a capability nobody has."""
+
+        assert "git" in run_cli("--help").stdout
+
+    def test_help_offers_a_git_example(self) -> None:
+        assert "secret-shield git" in run_cli("--help").stdout
+
+    def test_git_help_documents_every_option(self) -> None:
+        """Written out, so *removing* an option fails this test."""
+
+        stdout = run_cli("git", "--help").stdout
+
+        for option in (
+            "--max-commits",
+            "--max-blobs",
+            "--max-refs",
+            "--max-blob-size",
+            "--max-line-length",
+            "--timeout",
+            "--since",
+            "--until",
+            "--respect-path-filters",
+            "--format",
+            "--output",
+            "--fingerprint",
+            "--min-confidence",
+            "--fail-on",
+        ):
+            assert option in stdout, f"{option} is undocumented in git --help"
+
+    def test_git_help_states_the_sha1_limitation(self) -> None:
+        """A limitation the help does not mention is a limitation nobody meets."""
+
+        assert "SHA-1" in run_cli("git", "--help").stdout
+
+    def test_git_help_states_that_nothing_is_written(self) -> None:
+        assert "checked out" in run_cli("git", "--help").stdout
+
+    def test_git_help_documents_the_exit_codes(self) -> None:
+        stdout = run_cli("git", "--help").stdout
+
+        for code in ("0", "1", "2", "3"):
+            assert re.search(rf"^\s+{code}\s", stdout, re.MULTILINE)
+
+    def test_git_help_exits_zero(self) -> None:
+        assert run_cli("git", "--help").returncode == 0
+
+    def test_a_missing_target_is_a_usage_error(self) -> None:
+        result = run_cli("git")
+
+        assert result.returncode == 2
+
+    def test_an_unknown_option_is_a_usage_error(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--turbo").returncode == 2
+
+
+@needs_git
+class TestGitExitCodes:
+    def test_a_clean_repository_is_zero(self, tmp_path: Path) -> None:
+        repo = tmp_path / "clean"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        (repo / "app.py").write_text("print('hello')\n", encoding="utf-8")
+        build_git(repo, "add", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo))
+
+        assert result.returncode == 0
+        assert_no_synthetic_value(result)
+
+    def test_a_secret_in_the_history_is_one(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path))
+
+        assert result.returncode == 1
+        assert_no_synthetic_value(result)
+
+    def test_an_empty_repository_is_zero(self, tmp_path: Path) -> None:
+        """``git init`` and nothing more is not a broken repository."""
+
+        repo = tmp_path / "unborn"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+
+        result = run_cli("git", str(repo))
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+
+    def test_a_missing_target_is_two(self, tmp_path: Path) -> None:
+        result = run_cli("git", str(tmp_path / "not-a-repo"))
+
+        assert result.returncode == 2
+        assert result.stdout == ""
+
+    def test_a_missing_target_says_why(self, tmp_path: Path) -> None:
+        result = run_cli("git", str(tmp_path / "not-a-repo"))
+
+        assert "no such file or directory" in result.stderr
+
+    def test_a_file_target_is_two(self, secret_file: Path) -> None:
+        """A blob is not a repository, and the message must say which."""
+
+        result = run_cli("git", str(secret_file))
+
+        assert result.returncode == 2
+        assert "directory" in result.stderr
+
+    def test_a_directory_that_is_not_a_repository_is_three(self, tmp_path: Path) -> None:
+        """A scan that examined nothing cannot pass as a clean scan."""
+
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        result = run_cli("git", str(plain))
+
+        assert result.returncode == 3
+        assert "FINDINGS" not in result.stdout
+        assert_no_synthetic_value(result)
+
+    def test_a_non_repository_says_why_on_stderr(self, tmp_path: Path) -> None:
+        plain = tmp_path / "plain2"
+        plain.mkdir()
+
+        result = run_cli("git", str(plain))
+
+        assert "not-a-git-repository" in result.stderr
+        assert "partial" in result.stderr.lower()
+
+    def test_a_non_repository_reports_the_reason_in_the_report(
+        self, tmp_path: Path
+    ) -> None:
+        """The error belongs in the report too, for a redirect to be useful."""
+
+        plain = tmp_path / "plain3"
+        plain.mkdir()
+
+        result = run_cli("git", str(plain))
+
+        assert "not a Git repository" in result.stdout
+
+    def test_a_truncated_history_is_three_and_beats_findings(self, leaky: LeakyRepo) -> None:
+        """The precedence that matters most for a history scan.
+
+        Stopping at one commit and reporting findings would leave a reader
+        believing the older history was searched.
+        """
+
+        result = run_cli("git", str(leaky.path), "--max-commits", "1")
+
+        assert result.returncode == 3
+        assert_no_synthetic_value(result)
+
+    def test_a_truncated_history_says_so_on_stderr(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--max-commits", "1")
+
+        assert "NOT examined in full" in result.stderr
+
+    def test_fail_on_none_cannot_make_a_partial_scan_clean(
+        self, leaky: LeakyRepo
+    ) -> None:
+        result = run_cli(
+            "git", str(leaky.path), "--max-commits", "1", "--fail-on", "none"
+        )
+
+        assert result.returncode == 3
+
+    def test_an_invalid_format_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--format", "xml").returncode == 2
+
+    def test_fail_on_above_every_finding_is_clean(self, leaky: LeakyRepo) -> None:
+        """The AWS key rule is medium, so a ``critical`` threshold drops it."""
+
+        assert run_cli("git", str(leaky.path), "--fail-on", "medium").returncode == 1
+        assert run_cli("git", str(leaky.path), "--fail-on", "critical").returncode == 0
+
+    def test_fail_on_none_is_zero(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--fail-on", "none")
+
+        assert result.returncode == 0
+
+    def test_not_implemented_is_never_returned(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path)).returncode != 5
+
+
+@needs_git
+class TestGitReporting:
+    def test_the_working_tree_scan_misses_it(self, leaky: LeakyRepo) -> None:
+        """The reason this subcommand exists, stated in one test."""
+
+        result = run_cli("scan", str(leaky.path))
+
+        assert result.returncode == 0
+        assert_no_synthetic_value(result)
+
+    def test_the_history_scan_finds_it(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path))
+
+        assert "gone.py" in result.stdout
+        assert leaky.leaky_commit[:8] in result.stdout
+
+    def test_the_text_report_names_the_commit_and_the_path(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path))
+
+        assert f"gone.py:2:8@{leaky.displayed_commit}" in result.stdout
+
+    def test_the_text_report_prints_no_rule_object(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path))
+
+        assert "Finding(" not in result.stdout
+        assert "ScanResult(" not in result.stdout
+        assert "SourceKind." not in result.stdout
+
+    def test_json_carries_the_full_commit_and_time(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--format", "json")
+
+        payload = json.loads(result.stdout)
+        locations = [finding["location"] for finding in payload["findings"]]
+
+        assert locations
+        for location in locations:
+            assert len(location["commit"]) == 40
+            assert isinstance(location["commit_time"], int)
+            assert location["source_kind"] == "git"
+
+    def test_json_names_the_commit_that_had_the_secret(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--format", "json")
+
+        payload = json.loads(result.stdout)
+        commits = {finding["location"]["commit"] for finding in payload["findings"]}
+
+        assert commits == {leaky.leaky_commit}
+
+    def test_json_is_the_same_envelope_as_scan(self, leaky: LeakyRepo) -> None:
+        """One reporter for every source, so a CI parser needs no branch."""
+
+        from_secret = run_cli("git", str(leaky.path), "--format", "json")
+        from_scan = run_cli("scan", str(leaky.path), "--format", "json")
+
+        assert set(json.loads(from_secret.stdout)) == set(json.loads(from_scan.stdout))
+
+    def test_markdown_names_the_commit(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--format", "markdown")
+
+        assert "# Secret Shield Report" in result.stdout
+        assert f"gone.py:2:8@{leaky.displayed_commit}" in result.stdout
+
+    def test_markdown_escapes_the_masked_value(self, leaky: LeakyRepo) -> None:
+        """The masked value is rendered inside a table cell and must not spill."""
+
+        result = run_cli("git", str(leaky.path), "--format", "markdown")
+
+        assert "\\*" in result.stdout
+        assert_no_synthetic_value(result)
+
+    @pytest.mark.parametrize("fmt", ["text", "json", "markdown"])
+    def test_no_format_prints_a_raw_value(self, leaky: LeakyRepo, fmt: str) -> None:
+        result = run_cli("git", str(leaky.path), "--format", fmt)
+
+        assert result.returncode == 1
+        assert_no_synthetic_value(result)
+
+    def test_output_writes_the_report_and_leaves_stdout_empty(
+        self, leaky: LeakyRepo, tmp_path: Path
+    ) -> None:
+        destination = tmp_path / "report.json"
+
+        result = run_cli(
+            "git", str(leaky.path), "--format", "json", "--output", str(destination)
+        )
+
+        assert result.stdout == ""
+        assert result.returncode == 1
+        payload = json.loads(destination.read_text(encoding="utf-8"))
+        assert payload["findings"]
+        assert_no_synthetic_value(result)
+
+    def test_min_confidence_filters_the_report(self, leaky: LeakyRepo) -> None:
+        permissive = run_cli(
+            "git", str(leaky.path), "--format", "json", "--min-confidence", "candidate"
+        )
+        strict = run_cli(
+            "git", str(leaky.path), "--format", "json", "--min-confidence", "verified"
+        )
+
+        permissive_findings = json.loads(permissive.stdout)["findings"]
+        strict_findings = json.loads(strict.stdout)["findings"]
+
+        assert permissive_findings
+        assert len(strict_findings) < len(permissive_findings)
+
+    def test_min_confidence_never_turns_a_partial_scan_into_a_clean_one(
+        self, leaky: LeakyRepo
+    ) -> None:
+        result = run_cli(
+            "git",
+            str(leaky.path),
+            "--max-commits",
+            "1",
+            "--min-confidence",
+            "verified",
+        )
+
+        assert result.returncode == 3
+        assert_no_synthetic_value(result)
+
+    def test_an_unusable_min_confidence_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--min-confidence", "certain").returncode == 2
+
+    def test_fingerprint_is_present_in_json(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--format", "json")
+
+        payload = json.loads(result.stdout)
+        assert all(f["fingerprint"] for f in payload["findings"])
+
+    def test_the_fingerprint_is_stable_across_runs(self, leaky: LeakyRepo) -> None:
+        first = run_cli("git", str(leaky.path), "--format", "json")
+        second = run_cli("git", str(leaky.path), "--format", "json")
+
+        assert first.stdout == second.stdout
+
+    def test_an_hmac_fingerprint_needs_a_key(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--format", "json", "--fingerprint", "hmac")
+
+        assert result.returncode == 2
+
+    def test_the_coverage_line_goes_to_stderr(self, tmp_path: Path) -> None:
+        repo = tmp_path / "binary"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        (repo / "logo.png").write_bytes(bytes(range(256)) * 8)
+        (repo / "app.py").write_text("X = 1\n", encoding="utf-8")
+        build_git(repo, "add", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo))
+
+        assert result.returncode == 0
+        assert "binary object(s) not searched" in result.stderr
+        assert "binary" not in result.stdout
+
+    def test_path_filters_are_off_unless_asked_for(self, tmp_path: Path) -> None:
+        """A dependency tree is searched by default, because today's ignores
+        may not have been in force when the secret was committed."""
+
+        repo = tmp_path / "dependency"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        vendored = repo / "node_modules" / "pkg"
+        vendored.mkdir(parents=True)
+        (vendored / "index.js").write_text(
+            f'var key = "{SYNTHETIC_AWS_KEY}";\n', encoding="utf-8"
+        )
+        (repo / "app.py").write_text(
+            f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8"
+        )
+        build_git(repo, "add", "-f", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo))
+
+        assert result.returncode == 1
+        assert "node_modules" in result.stdout
+
+    def test_respecting_path_filters_skips_the_dependency_tree(
+        self, tmp_path: Path
+    ) -> None:
+        repo = tmp_path / "filtered"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        vendored = repo / "node_modules" / "pkg"
+        vendored.mkdir(parents=True)
+        (vendored / "index.js").write_text(
+            f'var key = "{SYNTHETIC_AWS_KEY}";\n', encoding="utf-8"
+        )
+        (repo / "app.py").write_text(
+            f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8"
+        )
+        build_git(repo, "add", "-f", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo), "--respect-path-filters")
+
+        assert result.returncode == 1
+        assert "node_modules" not in result.stdout
+        assert "path(s) skipped by --respect-path-filters" in result.stderr
+
+    def test_a_complete_scan_says_nothing_extra(self, tmp_path: Path) -> None:
+        repo = tmp_path / "complete"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        (repo / "app.py").write_text("X = 1\n", encoding="utf-8")
+        build_git(repo, "add", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo))
+
+        assert result.stderr == ""
+
+    def test_the_output_is_deterministic(self, leaky: LeakyRepo) -> None:
+        first = run_cli("git", str(leaky.path), "--format", "json")
+        second = run_cli("git", str(leaky.path), "--format", "json")
+
+        assert first.stdout == second.stdout
+        assert first.returncode == second.returncode
+
+    def test_stdin_is_not_read(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), stdin="", timeout=60.0)
+
+        assert result.returncode == 1
+
+
+@needs_git
+class TestGitLimitsAndWindow:
+    def test_max_commits_zero_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--max-commits", "0").returncode == 2
+
+    def test_max_commits_is_not_a_number_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--max-commits", "many").returncode == 2
+
+    def test_max_commits_past_the_end_is_not_a_truncation(self, leaky: LeakyRepo) -> None:
+        """Nothing was dropped, so exit ``3`` would be a false alarm."""
+
+        result = run_cli("git", str(leaky.path), "--max-commits", "1000")
+
+        assert result.returncode == 1
+        assert "NOT examined in full" not in result.stderr
+
+    def test_a_negative_max_commits_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--max-commits", "-1").returncode == 2
+
+    def test_max_blob_size_counts_what_it_skipped(self, tmp_path: Path) -> None:
+        repo = tmp_path / "huge"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        (repo / "big.env").write_text(
+            "x" * 8192 + f'\nKEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8"
+        )
+        build_git(repo, "add", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo), "--max-blob-size", "1024")
+
+        assert result.returncode == 0
+        assert "over the size limit not read" in result.stderr
+        assert_no_synthetic_value(result)
+
+    def test_max_blobs_counts_what_it_skipped(self, tmp_path: Path) -> None:
+        repo = tmp_path / "many-blobs"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        for index in range(6):
+            (repo / f"f{index}.txt").write_text(f"unique {index}\n", encoding="utf-8")
+        build_git(repo, "add", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo), "--max-blobs", "2")
+
+        assert result.returncode == 3
+        assert "NOT examined in full" in result.stderr
+
+    def test_a_hostile_since_is_two(self, leaky: LeakyRepo) -> None:
+        """A date beginning with ``-`` is an option, whatever the user meant."""
+
+        result = run_cli("git", str(leaky.path), "--since", "-x")
+
+        assert result.returncode == 2
+        assert result.stdout == ""
+        assert "since" in result.stderr
+
+    def test_a_hostile_until_is_two(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--until", "--all")
+
+        assert result.returncode == 2
+
+    def test_a_real_date_is_accepted(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--since", "2000-01-01")
+
+        assert result.returncode == 1
+        assert_no_synthetic_value(result)
+
+    def test_a_window_that_excludes_the_secret_is_clean(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--since", "2099-01-01")
+
+        assert result.returncode == 0
+        assert "NOT examined in full" not in result.stderr
+
+    def test_a_zero_timeout_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--timeout", "0").returncode == 2
+
+    def test_an_unparseable_timeout_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--timeout", "soon").returncode == 2
+
+    def test_a_timeout_beyond_the_ceiling_is_two(self, leaky: LeakyRepo) -> None:
+        assert run_cli("git", str(leaky.path), "--timeout", "99999").returncode == 2
+
+    def test_a_timeout_within_range_is_accepted(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", str(leaky.path), "--timeout", "120")
+
+        assert result.returncode == 1
+
+    def test_respect_path_filters_prunes_vendor_paths(self, tmp_path: Path) -> None:
+        repo = tmp_path / "vendored"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        path = repo / "node_modules" / "pkg" / "index.env"
+        path.parent.mkdir(parents=True)
+        path.write_text(f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8")
+        build_git(repo, "add", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        without = run_cli("git", str(repo))
+        with_filters = run_cli("git", str(repo), "--respect-path-filters")
+
+        assert without.returncode == 1
+        assert with_filters.returncode == 0
+        assert "skipped by --respect-path-filters" in with_filters.stderr
+        assert_no_synthetic_value(without)
+        assert_no_synthetic_value(with_filters)
+
+    def test_path_filters_are_off_by_default(self, tmp_path: Path) -> None:
+        """A secret behind today's ignore rules is exactly the interesting case."""
+
+        repo = tmp_path / "default"
+        repo.mkdir()
+        build_git(repo, "init", "-q", "-b", "main")
+        path = repo / "node_modules" / "pkg" / "index.env"
+        path.parent.mkdir(parents=True)
+        path.write_text(f'KEY = "{SYNTHETIC_AWS_KEY}"\n', encoding="utf-8")
+        build_git(repo, "add", "-A")
+        build_git(repo, "commit", "-qm", "first")
+
+        result = run_cli("git", str(repo))
+
+        assert result.returncode == 1
+        assert "node_modules/pkg/index.env" in result.stdout
+
+
+@needs_git
+class TestGitIsReadOnly:
+    """The claim a CI job can verify for itself."""
+
+    def _state(self, repo: Path) -> tuple[object, ...]:
+        tracked = sorted(
+            (str(path.relative_to(repo)), path.read_bytes())
+            for path in repo.rglob("*")
+            if path.is_file() and ".git" not in path.relative_to(repo).parts
+        )
+        return (
+            build_git(repo, "rev-parse", "HEAD"),
+            build_git(repo, "symbolic-ref", "HEAD"),
+            build_git(repo, "status", "--porcelain"),
+            build_git(repo, "for-each-ref"),
+            build_git(repo, "rev-list", "--all", "--count"),
+            tuple(tracked),
+        )
+
+    def test_the_repository_is_untouched(self, leaky: LeakyRepo) -> None:
+        before = self._state(leaky.path)
+
+        run_cli("git", str(leaky.path))
+
+        assert self._state(leaky.path) == before
+
+    def test_nothing_is_checked_out(self, leaky: LeakyRepo) -> None:
+        run_cli("git", str(leaky.path))
+
+        assert not (leaky.path / "gone.py").exists()
+
+    def test_the_working_tree_is_still_clean(self, leaky: LeakyRepo) -> None:
+        run_cli("git", str(leaky.path))
+
+        assert build_git(leaky.path, "status", "--porcelain") == ""
+
+    def test_no_ref_was_created(self, leaky: LeakyRepo) -> None:
+        before = build_git(leaky.path, "for-each-ref")
+
+        run_cli("git", str(leaky.path))
+
+        assert build_git(leaky.path, "for-each-ref") == before
+
+    def test_two_runs_leave_the_repository_identical(self, leaky: LeakyRepo) -> None:
+        run_cli("git", str(leaky.path))
+        after_first = self._state(leaky.path)
+
+        run_cli("git", str(leaky.path))
+
+        assert self._state(leaky.path) == after_first
+
+    def test_a_relative_target_works(self, leaky: LeakyRepo) -> None:
+        result = run_cli("git", ".", cwd=leaky.path)
+
+        assert result.returncode == 1
+        assert "gone.py" in result.stdout

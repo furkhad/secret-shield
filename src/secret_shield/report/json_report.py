@@ -9,10 +9,31 @@ from __future__ import annotations
 import json
 from typing import Any, Final
 
-from ..models import Finding, ScanError, ScanResult
+from ..models import Finding, Location, ScanError, ScanResult
 from .security import safe_json_serialize, sanitize_text
 
 SCHEMA_VERSION: Final[str] = "1.0"
+
+
+def _location_to_dict(location: Location) -> dict[str, Any]:
+    """Serialize a finding's location, including its history coordinates.
+
+    ``commit`` and ``commit_time`` are ``null`` for a finding from a working-tree
+    scan, which is why they are always present rather than only when set: a
+    consumer of ``--format json`` should be able to write ``if location.commit``
+    without first checking which command produced the file. For a history scan
+    they are the whole point of the report -- "``gone.py`` line 1" means nothing
+    without the commit that can still be checked out.
+    """
+
+    return {
+        "source_kind": str(location.source_kind),
+        "path": location.path,
+        "line": location.line,
+        "column": location.column,
+        "commit": location.commit,
+        "commit_time": location.commit_time,
+    }
 
 
 def _finding_to_dict(finding: Finding, *, include_fingerprint: bool) -> dict[str, Any]:
@@ -24,11 +45,7 @@ def _finding_to_dict(finding: Finding, *, include_fingerprint: bool) -> dict[str
         "severity": finding.severity.label,
         "confidence": finding.confidence.value if hasattr(finding.confidence, "value") else str(finding.confidence),
         "detector": finding.detector.label if hasattr(finding.detector, "label") else (finding.detector.value if hasattr(finding.detector, "value") else str(finding.detector)),
-        "location": {
-            "path": finding.location.path,
-            "line": finding.location.line,
-            "column": finding.location.column,
-        },
+        "location": _location_to_dict(finding.location),
         "masked_value": finding.masked_value,
         "value_length": finding.value_length,
         "entropy": finding.entropy,

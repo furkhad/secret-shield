@@ -118,10 +118,14 @@ from .exit_codes import (
     EXIT_USAGE,
     describe_exit_code,
 )
+from .filters.paths import default_path_filter_config
 from .masking import strip_control_characters
 from .models import TOOL_NAME, TOOL_VERSION, Confidence, ScanResult, Severity
 from .report import render_json, render_markdown, render_text
-from .sources import PathScanConfig, scan_path
+from .scanner import ScanConfig
+from .sources import GitScanConfig, HistoryScan, PathScanConfig, scan_history, scan_path
+from .sources.git_cmd import MAX_TIMEOUT_SECONDS, MIN_TIMEOUT_SECONDS
+from .sources.git_history import DEFAULT_MAX_BLOBS, DEFAULT_MAX_BLOB_SIZE, DEFAULT_MAX_REFS
 
 __all__ = [
     "FINGERPRINT_KEY_ENV",
@@ -264,6 +268,43 @@ def _positive(text: str) -> str:
     return text
 
 
+_STRICT_DECIMAL: Final[re.Pattern[str]] = re.compile(r"[+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
+"""The only decimal spellings accepted for a seconds value.
+
+Same reasoning as :data:`_STRICT_INTEGER`: ``float()`` would also accept
+``"1_0"``, ``" 1.0 "``, ``"nan"``, ``"inf"`` and a Unicode digit. ``nan`` and
+``inf`` are the ones that matter here -- a timeout of ``nan`` silently disables
+the very check the option exists to configure -- so the spelling is validated
+rather than handed to ``float`` and compared afterwards.
+"""
+
+
+def _positive_float(text: str) -> float:
+    """argparse ``type`` for a bounded number of seconds.
+
+    The bounds are ``git_cmd``'s own, applied here rather than left to raise
+    later: a value outside them is a mistake in the command line, so it belongs
+    in the usage-error path. Validating twice would produce an internal error
+    for something the user typed, which is both the wrong exit code and an
+    unhelpful message.
+
+    Raises:
+        argparse.ArgumentTypeError: If ``text`` is not a finite decimal within
+            ``[MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS]``.
+    """
+
+    if not _STRICT_DECIMAL.fullmatch(text):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number of seconds such as '30'")
+    value = float(text)
+    if value != value or value in (float("inf"), float("-inf")):
+        raise argparse.ArgumentTypeError("seconds must be a finite number")
+    if not MIN_TIMEOUT_SECONDS <= value <= MAX_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(
+            f"seconds must be between {MIN_TIMEOUT_SECONDS:g} and {MAX_TIMEOUT_SECONDS:g}"
+        )
+    return value
+
+
 def _severity_threshold(text: str) -> Severity | None:
     """Parse a ``--fail-on`` value into a threshold, or ``None`` for ``none``."""
 
@@ -297,8 +338,15 @@ Examples:
   {PROGRAM} scan . --format json --output report.json
   {PROGRAM} scan . --jobs 8 --fail-on high --max-depth 3
   {PROGRAM} scan src --min-confidence probable --fingerprint none
+  {PROGRAM} git .
+  {PROGRAM} git . --max-commits 500 --format json --output history.json
+  {PROGRAM} git ~/work/repo --since "2 years ago" --fail-on high
   {PROGRAM} rules list
   {PROGRAM} rules list --format json
+
+`{PROGRAM} git` reads a repository's history, so it finds secrets in files that
+were committed and then deleted -- which `{PROGRAM} scan` cannot see, because they
+are no longer there to read. It checks out nothing and writes nothing.
 """
 
 
@@ -334,6 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
 
     _add_scan_parser(commands)
+    _add_git_parser(commands)
     _add_rules_parser(commands)
     return parser
 
@@ -406,7 +455,33 @@ def _add_scan_parser(commands: Any) -> None:
         ),
     )
 
-    output = scan.add_argument_group("output")
+    _add_reporting_arguments(scan)
+
+    configuration = scan.add_argument_group("configuration")
+    configuration.add_argument(
+        "--project-root",
+        metavar="DIR",
+        type=_positive,
+        help=(
+            "directory to resolve configuration from (default: the current "
+            "directory). Reads pyproject.toml [tool.secretshield], then "
+            ".secretshield.toml, then .secretshield.json, then SECRETSHIELD_* "
+            "environment variables. Command line options win over all of them."
+        ),
+    )
+
+
+def _add_reporting_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the output and exit-status options shared by the scanners.
+
+    One definition for both ``scan`` and ``git``, so the two cannot drift into
+    disagreeing about what ``--format json`` means or which exit code a partial
+    result produces. A user who learns ``--fail-on`` from ``scan`` gets the same
+    behaviour from ``git`` for free, which is the point of sharing rather than
+    copying.
+    """
+
+    output = parser.add_argument_group("output")
     output.add_argument(
         "--format",
         choices=FORMATS,
@@ -447,7 +522,7 @@ def _add_scan_parser(commands: Any) -> None:
         ),
     )
 
-    reporting = scan.add_argument_group("exit status")
+    reporting = parser.add_argument_group("exit status")
     reporting.add_argument(
         "--fail-on",
         type=_severity_threshold,
@@ -462,18 +537,116 @@ def _add_scan_parser(commands: Any) -> None:
         ),
     )
 
-    configuration = scan.add_argument_group("configuration")
-    configuration.add_argument(
-        "--project-root",
-        metavar="DIR",
+
+def _add_git_parser(commands: Any) -> None:
+    """Register the ``git`` subcommand.
+
+    A separate subcommand rather than a ``scan --git`` flag, because the two do
+    genuinely different things and share no limits worth sharing. ``scan`` reads
+    the files that are present now and its limits are about a filesystem:
+    directory depth, symlinks, file counts. ``git`` reads objects that may not
+    exist on disk at all and its limits are about a commit graph and an object
+    database: how many commits to walk, how many distinct blobs to read, how
+    large a blob may be. Folding one into the other as a flag would mean every
+    ``scan`` invocation carried a dozen options that do nothing unless a
+    repository happened to be underneath it.
+    """
+
+    git = commands.add_parser(
+        "git",
+        help="scan a repository's history for secrets that were removed",
+        description=(
+            "Scan every blob reachable from HEAD, including content that was "
+            "committed and then deleted. Nothing is checked out, written or "
+            "fetched: the working tree, the index and HEAD are exactly as they "
+            "were before the scan.\n\n"
+            "Each distinct blob is read once no matter how many commits or paths "
+            "it appeared at, and each finding names the newest commit in which "
+            "that content was present at that path. Objects are reachable from "
+            "HEAD only, and only SHA-1 repositories are supported."
+        ),
+        epilog=_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    git.add_argument(
+        "target",
+        metavar="TARGET",
         type=_positive,
+        help="repository to scan; use '.' for the current directory",
+    )
+
+    limits = git.add_argument_group("history limits")
+    limits.add_argument(
+        "--max-commits",
+        type=_integer,
+        default=None,
+        metavar="N",
+        help="stop after this many commits; the newest are scanned first (default: all)",
+    )
+    limits.add_argument(
+        "--max-blobs",
+        type=_integer,
+        default=None,
+        metavar="N",
+        help=f"most distinct objects to read (default {DEFAULT_MAX_BLOBS})",
+    )
+    limits.add_argument(
+        "--max-refs",
+        type=_integer,
+        default=None,
+        metavar="N",
+        help="most distinct file paths to index (default %d)" % DEFAULT_MAX_REFS,
+    )
+    limits.add_argument(
+        "--max-blob-size",
+        type=_integer,
+        default=None,
+        metavar="N",
+        help=f"largest blob read into memory, in bytes (default {DEFAULT_MAX_BLOB_SIZE})",
+    )
+    limits.add_argument(
+        "--max-line-length",
+        type=_integer,
+        default=None,
+        metavar="N",
+        help="longest line handed to entropy analysis, in characters (default 65536)",
+    )
+    limits.add_argument(
+        "--timeout",
+        type=_positive_float,
+        default=None,
+        metavar="SECONDS",
         help=(
-            "directory to resolve configuration from (default: the current "
-            "directory). Reads pyproject.toml [tool.secretshield], then "
-            ".secretshield.toml, then .secretshield.json, then SECRETSHIELD_* "
-            "environment variables. Command line options win over all of them."
+            "wall-clock limit for each Git command, so a hung Git is killed "
+            f"rather than waited on, {MIN_TIMEOUT_SECONDS:g}-"
+            f"{MAX_TIMEOUT_SECONDS:g} seconds (default 300)"
         ),
     )
+    limits.add_argument(
+        "--since",
+        default=None,
+        metavar="WHEN",
+        help='only commits at or after this date, e.g. "2 years ago" or 2024-01-01',
+    )
+    limits.add_argument(
+        "--until",
+        default=None,
+        metavar="WHEN",
+        help="only commits at or before this date",
+    )
+    limits.add_argument(
+        "--respect-path-filters",
+        action="store_true",
+        default=False,
+        help=(
+            "skip the dependency, cache and build paths 'scan' skips by "
+            "default (node_modules, .venv, __pycache__ and the rest), and no "
+            "others. Off by default: a path ignored today may not have been "
+            "ignored when the secret was committed"
+        ),
+    )
+
+    _add_reporting_arguments(git)
 
 
 def _add_rules_parser(commands: Any) -> None:
@@ -527,6 +700,23 @@ _CLI_TO_SETTING: Final[tuple[tuple[str, str], ...]] = (
     ("max_depth", "paths.max_depth"),
     ("follow_symlinks", "paths.follow_symlinks"),
 )
+
+_GIT_TO_SETTING: Final[tuple[tuple[str, str], ...]] = (
+    ("max_commits", "max_commits"),
+    ("max_blobs", "max_blobs"),
+    ("max_refs", "max_refs"),
+    ("max_blob_size", "max_blob_size"),
+    ("max_line_length", "max_line_length"),
+    ("timeout", "timeout"),
+    ("since", "since"),
+    ("until", "until"),
+)
+"""``git`` command line options mapped onto :class:`GitScanConfig` fields.
+
+Named, and referenced by :func:`_git_scan_config`, so that adding an option
+means adding one pair here rather than writing another positional call that can
+transpose two same-typed limits without the reader noticing.
+"""
 
 
 def _overrides(args: argparse.Namespace) -> dict[str, object]:
@@ -818,6 +1008,35 @@ def _report_errors(result: ScanResult) -> None:
     )
 
 
+def _render_and_write(
+    args: argparse.Namespace, result: ScanResult, *, include_fingerprint: bool
+) -> int | None:
+    """Render ``result`` and put it where ``--output`` says, or on stdout.
+
+    Returns:
+        ``None`` when the report was written, or the exit code to return when it
+        could not be. The caller still has to add the summary diagnostics and
+        the finding exit code; only the write failure is reported here, because
+        nothing else has happened at that point.
+    """
+
+    report = RENDERERS[args.format](result, include_fingerprint=include_fingerprint)
+
+    destination = Path(args.output) if args.output else None
+    if destination is None:
+        sys.stdout.write(report)
+        sys.stdout.flush()
+        return None
+
+    try:
+        _write_report(destination, report)
+    except _OutputError as exc:
+        _diagnostic(str(exc))
+        return EXIT_USAGE if exc.usage else EXIT_SCAN_ERROR
+    _diagnostic(f"wrote {_one_line(str(destination))} (mode 0600)")
+    return None
+
+
 def _command_scan(args: argparse.Namespace) -> int:
     """Run ``secret-shield scan`` and return its exit code."""
 
@@ -856,21 +1075,141 @@ def _command_scan(args: argparse.Namespace) -> int:
     settings = _apply_fingerprint_key(config.path_scan, fingerprint_key)
     result = _apply_min_confidence(scan_path(target, settings), args.min_confidence)
 
-    report = RENDERERS[args.format](result, include_fingerprint=include_fingerprint)
-
-    destination = Path(args.output) if args.output else None
-    if destination is None:
-        sys.stdout.write(report)
-        sys.stdout.flush()
-    else:
-        try:
-            _write_report(destination, report)
-        except _OutputError as exc:
-            _diagnostic(str(exc))
-            return EXIT_USAGE if exc.usage else EXIT_SCAN_ERROR
-        _diagnostic(f"wrote {_one_line(str(destination))} (mode 0600)")
+    failure = _render_and_write(args, result, include_fingerprint=include_fingerprint)
+    if failure is not None:
+        return failure
 
     _report_errors(result)
+    return _exit_code(result, args.fail_on)
+
+
+# ---------------------------------------------------------------------------
+# git
+# ---------------------------------------------------------------------------
+
+
+def _not_a_directory(target: str) -> str | None:
+    """Return why ``target`` cannot be a repository, or ``None`` if it can be.
+
+    A Git repository is a directory: the non-bare form contains a ``.git``
+    directory, and the bare form *is* one. A regular file never is, and pointing
+    ``git`` at one is a mistake worth naming rather than a scan to attempt --
+    ``git -C somefile rev-parse`` would answer "not a repository" anyway, but
+    three layers down and without the path the user typed.
+    """
+
+    try:
+        info = os.stat(target)
+    except OSError:
+        # ``_invalid_target`` already reported this; returning the same kind of
+        # answer keeps the caller from needing two checks.
+        return "no such file or directory"
+    if stat.S_ISDIR(info.st_mode):
+        return None
+    return "a Git repository is a directory"
+
+
+def _git_scan_config(
+    args: argparse.Namespace, fingerprint_key: bytes | None
+) -> GitScanConfig:
+    """Build a :class:`GitScanConfig` from ``git`` command line arguments.
+
+    Every option left at its ``None`` default contributes nothing, so a setting
+    the user did not type cannot silently override :data:`DEFAULT_GIT_SCAN_CONFIG`
+    -- the same rule :func:`_overrides` follows for ``scan``.
+
+    The ``git`` subcommand deliberately does **not** read configuration files.
+    The settings that shape a history scan -- ``max_commits``, ``max_blobs``,
+    ``since`` -- are arguments about a particular investigation, and a value
+    pinned in ``pyproject.toml`` months ago would decide which commits are
+    examined without anyone remembering they had asked for that. Argument errors
+    surface as :class:`ValueError` from the config's own validation and become
+    exit code 2, exactly as they would in a file.
+    """
+
+    chosen: dict[str, object] = {}
+    for attribute, keyword in _GIT_TO_SETTING:
+        value = getattr(args, attribute)
+        if value is not None:
+            chosen[keyword] = value
+
+    scan = ScanConfig()
+    if fingerprint_key is not None:
+        scan = dataclasses.replace(scan, fingerprint_key=fingerprint_key)
+
+    return GitScanConfig(
+        scan=scan,
+        path_filters=default_path_filter_config() if args.respect_path_filters else None,
+        **chosen,  # type: ignore[arg-type]
+    )
+
+
+def _report_history_coverage(scan: HistoryScan) -> None:
+    """State, on stderr, what a history scan could not look at.
+
+    The report says what was *found*; it has no field for what was skipped,
+    because "0 findings" and "nothing was searched" must not look the same. This
+    line is where the difference is stated. Skipped binary objects are named
+    because they are the common case and a user deserves to know the scan was
+    not claiming more than it did.
+
+    One line, on stderr and never on stdout, and only when there is something
+    to disclose. That silence is safe rather than merely quiet: the line appears
+    precisely when part of the history was *not* examined, so its absence means
+    the scan looked at everything reachable from ``HEAD`` and the report's
+    finding count is the whole story.
+    """
+
+    notes: list[str] = []
+    if scan.truncated:
+        notes.append("history NOT examined in full (" + "; ".join(scan.truncated_because) + ")")
+    if scan.paths_filtered:
+        notes.append(f"{scan.paths_filtered} path(s) skipped by --respect-path-filters")
+    if scan.blobs_binary:
+        notes.append(f"{scan.blobs_binary} binary object(s) not searched")
+    if scan.blobs_too_large:
+        notes.append(f"{scan.blobs_too_large} object(s) over the size limit not read")
+    if not notes:
+        return
+    _diagnostic(
+        f"walked {scan.commits} commit(s); searched {scan.blobs_scanned} of "
+        f"{scan.blobs_seen} distinct object(s). " + "; ".join(notes) + "."
+    )
+
+
+def _command_git(args: argparse.Namespace) -> int:
+    """Run ``secret-shield git`` and return its exit code."""
+
+    target = args.target
+    problem = _invalid_target(target) or _not_a_directory(target)
+    if problem is not None:
+        _diagnostic(f"cannot scan {_one_line(target)}: {problem}")
+        return EXIT_USAGE
+
+    try:
+        fingerprint_key, include_fingerprint = _resolve_fingerprint(args)
+    except _UsageError as exc:
+        _diagnostic(str(exc))
+        return EXIT_USAGE
+
+    try:
+        config = _git_scan_config(args, fingerprint_key)
+    except (TypeError, ValueError) as exc:
+        # Raised by ``GitScanConfig.__post_init__``: a hostile ``--since``, a
+        # zero ``--timeout``. These are mistakes in the command line, not
+        # properties of a repository, so they are usage errors.
+        _diagnostic(_one_line(str(exc)))
+        return EXIT_USAGE
+
+    scan = scan_history(target, config)
+    result = _apply_min_confidence(scan.result, args.min_confidence)
+
+    failure = _render_and_write(args, result, include_fingerprint=include_fingerprint)
+    if failure is not None:
+        return failure
+
+    _report_errors(result)
+    _report_history_coverage(scan)
     return _exit_code(result, args.fail_on)
 
 
@@ -1036,6 +1375,7 @@ def _command_rules_list(args: argparse.Namespace) -> int:
 
 _HANDLERS: Final[dict[str, Any]] = {
     ("scan", None): _command_scan,
+    ("git", None): _command_git,
     ("rules", "list"): _command_rules_list,
 }
 
