@@ -450,6 +450,32 @@ def has_non_secret_structure(value: str) -> bool:
         false negative is a missed secret, a false positive is a review item.
         Where a rule's cost is now covered by an exact vendor match, that rule
         says so in its own docstring.
+
+    Known gap: long CamelCase identifiers
+    -------------------------------------
+
+    A bare compound identifier -- ``FilesystemScanConfig``, twenty characters,
+    mixed case, no separator -- is caught by none of the checks here.
+    ``_is_named_constant`` needs an underscore to recognise a name, and
+    ``_KEBAB_IDENTIFIER_PATTERN`` needs a hyphen, so such a value reaches the
+    entropy rule and is reported whenever it is at least ``min_length`` long
+    and measures at or above ``min_raw_entropy``.
+
+    This is a real false-positive class, not a curiosity. Compound identifiers
+    of that shape are ordinary in compiled languages and in generated code, and
+    a scanner that reports them gets muted by its users within a week.
+
+    It is deliberately **not** fixed here. The obvious filter -- "has an
+    interior capital following a lowercase" -- also rejects generated bodies
+    such as ``aB3dE5fG7hJ9kL``, which is exactly the shape a machine-made
+    secret has. That fix would trade a false positive for a false negative, and
+    choosing the trade properly needs the Stage 4 fusion rules in place, where
+    an entropy candidate that a vendor rule already matched costs nothing to
+    suppress.
+
+    Found by the Stage 3 self-scan, which is what it is for. The offending
+    identifier was renamed rather than the rule weakened; the class is now
+    called :class:`~secret_shield.sources.PathScanConfig`.
     """
 
     return (

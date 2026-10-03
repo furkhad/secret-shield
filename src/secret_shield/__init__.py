@@ -1,10 +1,10 @@
 """SecretShield: find accidentally exposed secrets.
 
-Scan one file and read the result::
+Scan a file or a whole tree::
 
     import secret_shield
 
-    result = secret_shield.scan_file("config/settings.py")
+    result = secret_shield.scan_path(".")
     print(secret_shield.render_text(result))
 
 What is implemented, and what each layer guarantees:
@@ -20,15 +20,19 @@ What is implemented, and what each layer guarantees:
 * :mod:`secret_shield.tokenizer` -- conservative candidate extraction, with
   filters for the code-shaped values that entropy alone cannot distinguish from
   secrets.
-* :mod:`secret_shield.detectors` -- the detection rules; today exactly one,
-  capped at MEDIUM severity and PROBABLE confidence because entropy alone
-  cannot establish what a value is.
+* :mod:`secret_shield.detectors` -- the detection rules: vendor patterns with
+  the context logic that supports them, plus the entropy rule for values no
+  vendor claims.
+* :mod:`secret_shield.filters` -- whether a file is text, and whether its path
+  may be looked at at all.
 * :mod:`secret_shield.scanner` -- reading one text file safely and reporting
   what it could not read, rather than raising.
+* :mod:`secret_shield.sources` -- where secrets are looked for. Today that means
+  a file or a whole directory tree.
 * :mod:`secret_shield.report` -- rendering a result as plain text.
 
-Not implemented yet: a CLI, directory traversal, vendor rules, JSON and
-Markdown output, and Git history scanning.
+Not implemented yet: a CLI, Git history scanning, JSON and Markdown output, and
+pattern/entropy fusion.
 
 Importing this package has no side effects: no configuration is read, no
 filesystem is touched and nothing is printed.
@@ -50,6 +54,16 @@ from .exit_codes import (
     EXIT_SCAN_ERROR,
     EXIT_SUCCESS,
     EXIT_USAGE,
+)
+from .filters import (
+    BinaryConfig,
+    BinaryVerdict,
+    Decision,
+    PathFilterConfig,
+    SkipReason,
+    classify_bytes,
+    default_binary_config,
+    default_path_filter_config,
 )
 from .masking import (
     FULLY_REDACTED,
@@ -76,6 +90,13 @@ from .models import (
 )
 from .report import render_text
 from .scanner import ScanConfig, default_scan_config, scan_file
+from .sources import (
+    PathScanConfig,
+    WalkResult,
+    default_path_scan_config,
+    scan_path,
+    walk,
+)
 from .tokenizer import Token, candidates
 
 __version__ = TOOL_VERSION
@@ -116,6 +137,21 @@ __all__ = [
     "ScanConfig",
     "default_scan_config",
     "scan_file",
+    # Sources
+    "PathScanConfig",
+    "default_path_scan_config",
+    "scan_path",
+    "walk",
+    "WalkResult",
+    # Filters
+    "BinaryConfig",
+    "BinaryVerdict",
+    "classify_bytes",
+    "default_binary_config",
+    "PathFilterConfig",
+    "default_path_filter_config",
+    "Decision",
+    "SkipReason",
     # Reporting
     "render_text",
     # Exit codes

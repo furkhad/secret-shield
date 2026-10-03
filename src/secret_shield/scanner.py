@@ -25,6 +25,7 @@ from typing import Final
 
 from .detectors import EntropyRuleConfig, default_entropy_config
 from .detectors import detect as detect_entropy
+from .filters.binary import has_nul_byte
 from .models import TOOL_VERSION, Finding, ScanError, ScanResult
 from .tokenizer import candidates
 
@@ -178,7 +179,7 @@ def _read_text_file(
             code="read-failed",
         )
 
-    if b"\x00" in data[:BINARY_SNIFF_BYTES]:
+    if has_nul_byte(data[:BINARY_SNIFF_BYTES]):
         return None, 0, ScanError(
             "file looks binary (NUL byte in the first "
             f"{BINARY_SNIFF_BYTES} bytes)",

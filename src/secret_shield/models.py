@@ -212,6 +212,21 @@ class Location:
     def __post_init__(self) -> None:
         if not isinstance(self.path, str) or not self.path.strip():
             raise ValueError("path must be a non-empty string")
+        # Normalised here, not at print time, so the stored value is already
+        # safe. A directory scan builds this path from filenames found on disk,
+        # and a filename may contain an ANSI escape or a newline: `evil\e[31mFAKE`
+        # is a legal Linux filename and the cheapest way there is to forge a line
+        # in someone's CI log. Stripping at construction means every consumer is
+        # protected, including ones written later.
+        #
+        # The cost is that the reported path may not match the name on disk
+        # exactly. That is the right way round: the path is a label for a human,
+        # and a label that can repaint someone's terminal is not worth the
+        # fidelity. A path that becomes empty is rejected below rather than
+        # reported as an anonymous finding.
+        object.__setattr__(self, "path", strip_control_characters(self.path))
+        if not self.path.strip():
+            raise ValueError("path must not consist only of control characters")
         self._validate_optional_int(self.line, "line")
         self._validate_optional_int(self.column, "column")
         if self.commit is not None:
