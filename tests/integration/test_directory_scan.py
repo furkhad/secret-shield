@@ -14,13 +14,12 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from secret_shield.filters.paths import PathFilterConfig
-from secret_shield.models import ScanResult
+from secret_shield.models import Confidence, DetectorKind, ScanResult, Severity
 from secret_shield.scanner import ScanConfig
 from secret_shield.sources import PathScanConfig, scan_path, walk
 from tests.vendor_fixtures import (  # type: ignore
@@ -128,13 +127,16 @@ class TestScanningARealisticProject:
     def test_every_secret_is_found(self, project: Path) -> None:
         """The load-bearing test: nothing planted is missed.
 
-        Six distinct credentials across five files, all found. Note the extra
-        ``high-entropy-string`` on the AWS line: that is not a defect but the
-        expected consequence of running two independent rules. Stage 1's
-        entropy rule sees a high-entropy token and reports it; Stage 2's vendor
-        rule recognises the shape and reports it too. Fusing them into one
-        finding is Stage 4's job -- until then both are honest answers, and
-        hiding either would lose a detection.
+        Six distinct credentials across five files, found once each.
+
+        Before Stage 4 this list held a seventh entry: a second
+        ``high-entropy-string`` finding on the AWS line, because the entropy
+        rule and the vendor rule were both right about the same 40 characters
+        and neither knew about the other. Fusion collapses that pair, and the
+        AWS credential is now reported as a single composite finding carrying
+        the vendor rule's identity. The detection is not lost -- there is one
+        finding fewer because there is one secret, not because anything stopped
+        looking.
         """
 
         result = scan_path(project, config())
@@ -142,17 +144,43 @@ class TestScanningARealisticProject:
             ("github-pat-classic", ".env", 1),
             ("stripe-secret-key-live", ".env", 2),
             ("aws-secret-access-key", "config/aws.ini", 2),
-            ("high-entropy-string", "config/aws.ini", 2),
             ("private-key-block", "deploy.pem", 1),
             ("openai-api-key", "src/example/settings.py", 1),
             ("openai-api-key", "src/example/unicode.py", 2),
         ]
 
+    def test_the_aws_line_is_reported_once_not_twice(self, project: Path) -> None:
+        """The overlap that motivated fusion, asserted on its own.
+
+        The entropy rule and ``aws-secret-access-key`` see identical bytes here.
+        The result must be one finding, and it must be the vendor's: the
+        anonymous entropy finding would file a CRITICAL AWS credential as a
+        MEDIUM anonymous string and give a reviewer nothing to act on.
+        """
+
+        result = scan_path(project, config())
+        aws_line = [
+            finding
+            for finding in result.findings
+            if finding.location.path == "config/aws.ini" and finding.location.line == 2
+        ]
+
+        assert len(aws_line) == 1
+        assert aws_line[0].rule_id == "aws-secret-access-key"
+        assert aws_line[0].detector is DetectorKind.COMPOSITE
+        assert aws_line[0].severity is Severity.CRITICAL
+        # Entropy corroboration promotes a PROBABLE vendor match, but never past
+        # the ceiling: nothing here has been checked against AWS.
+        assert aws_line[0].confidence is Confidence.HIGH_CONFIDENCE
+
     def test_each_planted_credential_is_reported_by_a_vendor_rule(self, project: Path) -> None:
-        """Every rule that fired is a vendor rule except the known entropy overlap.
+        """Every rule that fired names a vendor.
 
         Asserted as a set of rule ids so a future change that adds or removes a
-        detector is visible here rather than silently absorbed.
+        detector is visible here rather than silently absorbed. ``high-entropy-
+        string`` was on this list until Stage 4: it was there only as the
+        duplicate of the AWS match, and fusion removed the duplicate rather than
+        the detection.
         """
 
         rules = {finding.rule_id for finding in scan_path(project, config()).findings}
@@ -162,7 +190,6 @@ class TestScanningARealisticProject:
             "aws-secret-access-key",
             "private-key-block",
             "openai-api-key",
-            "high-entropy-string",
         }
 
     def test_every_planted_file_is_covered(self, project: Path) -> None:

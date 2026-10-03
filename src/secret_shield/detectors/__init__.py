@@ -16,6 +16,12 @@ Both produce the same kind of result, and neither can prove a credential is
 live. Confidence is capped at ``HIGH_CONFIDENCE`` across both, because nothing
 in SecretShield contacts an issuing service.
 
+Running both over one file reports one secret twice, so neither module decides
+what to do about it: each publishes its evidence, and
+:mod:`secret_shield.pipeline` decides whether two matches describe one secret or
+two. :func:`entropy_candidates` exists for that -- it is :func:`detect` without
+the redaction, so the comparison can happen while the spans are still known.
+
 The engine (:mod:`secret_shield.detectors.base`) knows nothing about any vendor.
 Adding a provider is a change to the catalog's data, never to the engine.
 """
@@ -46,9 +52,11 @@ from .entropy_rule import (
     RULE_ID,
     RULE_NAME,
     REMEDIATION,
+    EntropyCandidate,
     EntropyRuleConfig,
     default_entropy_config,
     detect,
+    entropy_candidates,
     evaluate,
 )
 
@@ -83,4 +91,7 @@ __all__ = [
     "default_entropy_config",
     "detect",
     "evaluate",
+    # Entropy evidence, for Stage 4 fusion
+    "EntropyCandidate",
+    "entropy_candidates",
 ]

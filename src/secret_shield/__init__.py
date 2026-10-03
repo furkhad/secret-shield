@@ -23,6 +23,8 @@ What is implemented, and what each layer guarantees:
 * :mod:`secret_shield.detectors` -- the detection rules: vendor patterns with
   the context logic that supports them, plus the entropy rule for values no
   vendor claims.
+* :mod:`secret_shield.pipeline` -- turning two detectors into one answer:
+  overlap fusion, deduplication and the canonical ordering a scan reports in.
 * :mod:`secret_shield.filters` -- whether a file is text, and whether its path
   may be looked at at all.
 * :mod:`secret_shield.scanner` -- reading one text file safely and reporting
@@ -31,8 +33,7 @@ What is implemented, and what each layer guarantees:
   a file or a whole directory tree.
 * :mod:`secret_shield.report` -- rendering a result as plain text.
 
-Not implemented yet: a CLI, Git history scanning, JSON and Markdown output, and
-pattern/entropy fusion.
+Not implemented yet: a CLI, Git history scanning, and JSON and Markdown output.
 
 Importing this package has no side effects: no configuration is read, no
 filesystem is touched and nothing is printed.
@@ -40,7 +41,12 @@ filesystem is touched and nothing is printed.
 
 from __future__ import annotations
 
-from .detectors import EntropyRuleConfig, default_entropy_config
+from .detectors import (
+    EntropyCandidate,
+    EntropyRuleConfig,
+    default_entropy_config,
+    entropy_candidates,
+)
 from .entropy import (
     classify_charset,
     normalized_entropy,
@@ -88,6 +94,16 @@ from .models import (
     Severity,
     SourceKind,
 )
+from .pipeline import (
+    ENTROPY_CONFIDENCE,
+    MAX_CONFIDENCE,
+    MergedMatch,
+    analyze_text,
+    dedupe,
+    describes_same_value,
+    fuse,
+    pattern_order,
+)
 from .report import render_text
 from .scanner import ScanConfig, default_scan_config, scan_file
 from .sources import (
@@ -134,9 +150,20 @@ __all__ = [
     # Detection and scanning
     "EntropyRuleConfig",
     "default_entropy_config",
+    "EntropyCandidate",
+    "entropy_candidates",
     "ScanConfig",
     "default_scan_config",
     "scan_file",
+    # Fusion
+    "MergedMatch",
+    "analyze_text",
+    "fuse",
+    "dedupe",
+    "describes_same_value",
+    "pattern_order",
+    "MAX_CONFIDENCE",
+    "ENTROPY_CONFIDENCE",
     # Sources
     "PathScanConfig",
     "default_path_scan_config",

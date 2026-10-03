@@ -1,13 +1,30 @@
 """The Stage 1 detector: high-entropy string screening.
 
-This is the whole detection engine so far, and it is deliberately blunt.
+This rule is deliberately blunt, and it is the only one that does not need to
+know what a value belongs to.
 
 What it claims: *this text has enough character variety to be worth a human
 look.* What it does not claim: *this text is a credential.* A hex API key, a
 SHA-1 commit hash, a UUID, a base64-encoded image, a git blob ID and a leaked
 credential are indistinguishable to an entropy measurement, and no threshold
-change will separate them. Later stages do that job with vendor rules,
-allowlists and context scoring.
+change will separate them. The vendor rules do that job, and
+:mod:`secret_shield.pipeline` decides what to do when both kinds of evidence
+land on the same bytes.
+
+Three entry points, one decision
+--------------------------------
+
+:func:`evaluate` is the decision: given a value and the thresholds, return the
+entropy that qualified it or ``None``. :func:`entropy_candidates` applies that
+decision to a stream of tokens and returns the qualifying ones **with their
+source spans**, as :class:`EntropyCandidate` objects. :func:`detect` is
+:func:`entropy_candidates` followed by redaction.
+
+The split exists because the decision and the conversion are now used by two
+different callers. ``detect`` wants findings; fusion wants to compare spans
+against another detector's, which a redacted finding can no longer supply.
+Deciding once and converting once means the thresholds are applied in exactly
+one place and cannot drift between the two callers.
 
 Three consequences are baked into the code rather than left to the reporter:
 
@@ -52,9 +69,11 @@ __all__ = [
     "DEFAULT_MIN_LENGTH",
     "DEFAULT_MIN_RAW_ENTROPY",
     "DEFAULT_MIN_NORMALIZED_ENTROPY",
+    "EntropyCandidate",
     "EntropyRuleConfig",
     "default_entropy_config",
     "detect",
+    "entropy_candidates",
     "evaluate",
 ]
 
@@ -171,6 +190,159 @@ def default_entropy_config() -> EntropyRuleConfig:
     return EntropyRuleConfig()
 
 
+@dataclass(frozen=True, slots=True)
+class EntropyCandidate:
+    """One candidate that passed every entropy gate, with the span it covers.
+
+    **This object holds the credential in the clear**, and it observes the same
+    discipline as :class:`~secret_shield.detectors.base.RawMatch`: it exists
+    only between the tokenizer and the fusion layer, its ``repr`` is redacted,
+    and it is never stored in a
+    :class:`~secret_shield.models.Finding`.
+
+    It exists because :func:`detect` is not the only consumer of this rule any
+    more. Stage 4 has to compare an entropy hit against a pattern hit to decide
+    whether they describe one secret or two, and that comparison needs a source
+    range -- not just a redacted finding, whose offsets are gone by the time it
+    is built. Producing the evidence first and the finding second keeps the
+    redaction boundary exactly where it was.
+
+    Attributes:
+        value: The candidate text. Never persisted.
+        start_offset: 0-based offset of the value within the file text.
+        end_offset: 0-based offset just past the value in the file text.
+        line: 1-based line of the first character.
+        column: 1-based column of the first character.
+        entropy: Shannon entropy in bits per character, the value that passed.
+    """
+
+    value: str
+    start_offset: int
+    end_offset: int
+    line: int
+    column: int
+    entropy: float
+
+    @property
+    def span(self) -> tuple[int, int]:
+        """``(start_offset, end_offset)``, in pattern-rule coordinates.
+
+        Taken from the tokenizer's own record of the source text rather than
+        from ``offset + len(value)``, so it stays correct for a literal
+        containing escape sequences.
+        """
+
+        return (self.start_offset, self.end_offset)
+
+    @property
+    def length(self) -> int:
+        """Length of the candidate in characters."""
+
+        return len(self.value)
+
+    def __repr__(self) -> str:
+        return (
+            f"EntropyCandidate(line={self.line}, column={self.column}, "
+            f"length={self.length}, entropy={self.entropy:.2f})"
+        )
+
+    def to_finding(
+        self,
+        path: str,
+        *,
+        severity: Severity = Severity.MEDIUM,
+        source_kind: SourceKind = SourceKind.FILE,
+        commit: str | None = None,
+        commit_time: int | None = None,
+    ) -> Finding:
+        """Convert to a redacted :class:`~secret_shield.models.Finding`.
+
+        The one place an entropy candidate becomes a finding on its own. The
+        fusion layer builds composites through a
+        :class:`~secret_shield.detectors.base.RawMatch` instead, because only a
+        pattern match knows the rule, the category and the remediation.
+
+        Args:
+            path: File path recorded on the finding.
+            severity: Severity to use. Callers pass
+                :attr:`EntropyRuleConfig.severity_ceiling`, which is never above
+                MEDIUM.
+            source_kind: Whether the text came from a file or from Git history.
+            commit: Commit hash, when scanning history.
+            commit_time: Commit timestamp, when scanning history.
+
+        Note:
+            The value is masked and fingerprinted inside ``from_match`` and then
+            dropped. Nothing about it outlives the call.
+        """
+
+        return Finding.from_match(
+            rule_id=RULE_ID,
+            rule_name=RULE_NAME,
+            category=SecretCategory.UNKNOWN,
+            severity=severity,
+            confidence=Confidence.PROBABLE,
+            detector=DetectorKind.ENTROPY,
+            location=Location(
+                source_kind=source_kind,
+                path=path,
+                line=self.line,
+                column=self.column,
+                commit=commit,
+                commit_time=commit_time,
+            ),
+            raw_value=self.value,
+            policy=FULLY_REDACTED,
+            entropy=self.entropy,
+            matched_keywords=(),
+            remediation=REMEDIATION,
+        )
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+
+def entropy_candidates(
+    tokens: Iterable[Token],
+    config: EntropyRuleConfig | None = None,
+) -> tuple[EntropyCandidate, ...]:
+    """Return the tokens that pass every entropy gate, with their spans.
+
+    This is the rule's decision, separated from :func:`detect` so that the
+    decision can be taken on its own and compared against other detectors. The
+    gates are exactly :func:`evaluate`'s; nothing is added or relaxed here.
+
+    Args:
+        tokens: Candidates from :func:`secret_shield.tokenizer.candidates`.
+        config: Thresholds to apply. Defaults to
+            :data:`DEFAULT_ENTROPY_CONFIG`.
+
+    Returns:
+        Candidates in token order. The returned objects hold raw values; see
+        the class docstring.
+    """
+
+    settings = config if config is not None else DEFAULT_ENTROPY_CONFIG
+    found: list[EntropyCandidate] = []
+
+    for token in tokens:
+        entropy = evaluate(token.value, settings)
+        if entropy is None:
+            continue
+        found.append(
+            EntropyCandidate(
+                value=token.value,
+                start_offset=token.offset,
+                end_offset=token.end_offset,
+                line=token.line,
+                column=token.column,
+                entropy=entropy,
+            )
+        )
+
+    return tuple(found)
+
+
 def evaluate(value: str, config: EntropyRuleConfig | None = None) -> float | None:
     """Return the entropy of ``value`` if it qualifies as a candidate.
 
@@ -218,6 +390,13 @@ def detect(
 ) -> tuple[Finding, ...]:
     """Turn qualifying candidates into findings.
 
+    This is :func:`entropy_candidates` followed by redaction: the entropy rule's
+    decision happens in one place, and this function only converts the result.
+    It reports every qualifying candidate separately, which is the right answer
+    when the entropy rule is running on its own. When a pattern rule also
+    matched the same bytes, :func:`secret_shield.pipeline.fuse` decides the two
+    are one secret before anything is built here.
+
     The raw value is passed to :meth:`~secret_shield.models.Finding.from_match`
     and never stored: it is masked and fingerprinted there, then dropped. No
     other attribute of a finding carries any part of it.
@@ -237,40 +416,17 @@ def detect(
     """
 
     settings = config if config is not None else DEFAULT_ENTROPY_CONFIG
-    severity = settings.severity_ceiling
-    findings: list[Finding] = []
 
-    for token in tokens:
-        entropy = evaluate(token.value, settings)
-        if entropy is None:
-            continue
-
-        location = Location(
+    return tuple(
+        candidate.to_finding(
+            path,
+            severity=settings.severity_ceiling,
             source_kind=source_kind,
-            path=path,
-            line=token.line,
-            column=token.column,
             commit=commit,
             commit_time=commit_time,
         )
-        findings.append(
-            Finding.from_match(
-                rule_id=RULE_ID,
-                rule_name=RULE_NAME,
-                category=SecretCategory.UNKNOWN,
-                severity=severity,
-                confidence=Confidence.PROBABLE,
-                detector=DetectorKind.ENTROPY,
-                location=location,
-                raw_value=token.value,
-                policy=FULLY_REDACTED,
-                entropy=entropy,
-                matched_keywords=(),
-                remediation=REMEDIATION,
-            )
-        )
-
-    return tuple(findings)
+        for candidate in entropy_candidates(tokens, settings)
+    )
 
 
 def _looks_like_prose(value: str, settings: EntropyRuleConfig) -> bool:

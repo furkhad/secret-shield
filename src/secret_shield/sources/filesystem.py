@@ -21,6 +21,14 @@ the directory containing that same file would. A scanner that reports less when
 asked precisely is a scanner nobody should trust. The difference is documented
 on both functions so the choice is visible rather than surprising.
 
+Running both detectors means a file that earns two matches from two rules, so
+the per-file analysis goes through :func:`secret_shield.pipeline.analyze_text`
+rather than calling each detector in turn. Fusion compares character offsets
+between the two, and one exception to it is worth stating here: a file whose
+lines exceeded ``max_line_length`` is analysed **unfused**, because the capped
+copy the entropy rule reads no longer shares coordinates with the full text the
+pattern rules read. See :func:`_analyze_file`.
+
 Determinism
 -----------
 
@@ -32,6 +40,10 @@ unchanged tree produce byte-identical results, which is what makes the output
 diffable and a CI result reproducible. Directory entries are also sorted as
 they are read, so memory use stays predictable on a tree that is mostly
 subdirectories.
+
+Findings are returned in the canonical :attr:`~secret_shield.models.Finding.sort_key`
+order rather than in the order files happened to be read, so ``result.findings``
+and ``result.sorted_findings()`` agree instead of merely being both sorted.
 
 Paths in the result are **root-relative, POSIX-style**: ``src/app/settings.py``,
 never ``/home/someone/project/src/app/settings.py``. A report that embedded the
@@ -93,6 +105,7 @@ from ..filters.paths import (
     resolve_within,
 )
 from ..models import TOOL_VERSION, Finding, ScanError, ScanResult
+from ..pipeline import analyze_text
 from ..scanner import ScanConfig
 from ..tokenizer import candidates
 
@@ -626,7 +639,12 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
 
     return _result(
         started,
-        findings=tuple(findings),
+        # Files are already in sorted order, so this sorts within files rather
+        # than across the tree. Both halves matter: the result of a scan should
+        # not depend on the order the filesystem handed entries back, and
+        # ``sorted_findings`` exists for callers who want a fresh view rather
+        # than the one the scan already produced.
+        findings=tuple(sorted(findings, key=lambda finding: finding.sort_key)),
         errors=tuple(errors),
         files_scanned=files_scanned,
         bytes_scanned=bytes_scanned,
@@ -737,8 +755,27 @@ def _analyze_file(
     rules = registry if registry is not None else config.rules()
     capped, over_length = _cap_long_lines(text, config.max_line_length)
 
-    findings = findings_from(find_matches(text, rules), display)
-    findings = findings + detect_entropy(candidates(capped), display, config.scan.entropy)
+    if over_length:
+        # Fusion compares offsets, and two detectors can only be compared when
+        # they are measuring the same string. ``capped`` and ``text`` agree up
+        # to the first truncated line and disagree after it, so a file whose
+        # lines were capped has no coordinate system the two detectors share.
+        #
+        # Rather than guess at a mapping, this file is analysed unfused: each
+        # detector reports what it found on its own. The cost is a duplicate
+        # finding on a line that also drew a ``line-too-long`` error, which is
+        # a file the result already declares as only partly analysed. The
+        # alternative -- fusing on offsets known to be wrong -- can attach a
+        # vendor rule's severity to an unrelated value.
+        findings = findings_from(find_matches(text, rules), display)
+        findings = findings + detect_entropy(candidates(capped), display, config.scan.entropy)
+    else:
+        findings = analyze_text(
+            text,
+            display,
+            registry=rules,
+            entropy=config.scan.entropy,
+        )
 
     errors: tuple[ScanError, ...] = ()
     if over_length:
@@ -773,9 +810,10 @@ def _cap_long_lines(text: str, limit: int) -> tuple[str, int]:
     """Return ``text`` with every line truncated to ``limit``, and how many were.
 
     Newlines are preserved exactly, so line numbers in findings are identical
-    whether or not the cap applied. Character *offsets* within a capped line
-    would differ from the uncapped text; nothing in the entropy path uses an
-    offset, and the pattern rules are given the uncapped text regardless.
+    whether or not the cap applied. Character *offsets* are not: truncating a
+    line shifts every offset after it. The pattern rules are always given the
+    uncapped text, and when this function reports a truncation the caller skips
+    fusion rather than comparing two coordinate systems that disagree.
     """
 
     if len(text) <= limit:

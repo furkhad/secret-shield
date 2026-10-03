@@ -629,6 +629,37 @@ def test_tokenizer_never_raises_on_hostile_input() -> None:
 
 
 def test_token_is_constructible_directly() -> None:
-    token = Token(value="abc", line=1, column=1, offset=0, delimiter='"', origin=ORIGIN_QUOTED)
+    token = Token(
+        value="abc",
+        line=1,
+        column=1,
+        offset=0,
+        end_offset=3,
+        delimiter='"',
+        origin=ORIGIN_QUOTED,
+    )
 
     assert token.length == 3
+    assert token.span == (0, 3)
+
+
+def test_a_tokens_span_is_the_exact_source_range() -> None:
+    """The span is what a pattern rule's offsets are measured in, so it has to
+    be exact rather than derived from ``len(value)``."""
+
+    for text in ('k = "abc"', "k = abc", "k = 'abc'", "k = `abc`", 'k = "a b c"'):
+        for token in candidates(text):
+            start, end = token.span
+            assert text[start:end] == token.value, text
+
+
+def test_a_span_survives_a_collapsed_escape_sequence() -> None:
+    """``length`` is the value; ``span`` is the source. They differ here, and
+    pretending otherwise would make an escape-bearing literal overlap test lie."""
+
+    token, = candidates('k = "a\\nb"')
+
+    assert token.value == "anb"
+    assert token.length == 3
+    assert token.span == (5, 9)
+    assert 'k = "a\\nb"'[slice(*token.span)] == 'a\\nb'

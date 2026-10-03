@@ -27,13 +27,12 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from secret_shield.filters.paths import PathFilterConfig, SkipReason
-from secret_shield.models import ScanResult
+from secret_shield.models import DetectorKind, ScanResult
 from secret_shield.scanner import ScanConfig
 from secret_shield.sources import (
     DEFAULT_MAX_FILES,
@@ -1055,6 +1054,83 @@ class TestLongLines:
         target.write_text("x" * 500 + "\n", encoding="utf-8")
         result = scan_path(target, config(max_line_length=100))
         assert result.bytes_scanned == 501
+
+    def test_a_capped_file_is_analysed_unfused(self, tmp_path: Path) -> None:
+        """A capped file reports both detectors separately, and says why.
+
+        Fusion compares character offsets between two detectors. Once a line has
+        been truncated, the entropy copy and the pattern copy stop sharing
+        coordinates -- every offset after the truncation is shifted by a
+        different amount -- so there is no correct way to ask whether two spans
+        describe one value.
+
+        The chosen degradation is to fuse nothing and report the file as partly
+        analysed. That costs a duplicate finding on a line the result already
+        flags with ``line-too-long``. Fusing on offsets known to be wrong would
+        cost worse: it could file a vendor rule's severity against a value
+        nothing matched, which is a confident wrong answer rather than an extra
+        honest one.
+        """
+
+        from tests.vendor_fixtures import AWS_SECRET_ACCESS_KEY  # type: ignore
+
+        target = tmp_path / "bundle.js"
+        target.write_text(
+            "x" * 500 + "\n" + f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"\n',
+            encoding="utf-8",
+        )
+
+        result = scan_path(target, config(max_line_length=100))
+
+        assert error_codes(result) == ["line-too-long"]
+        assert {finding.rule_id for finding in result.findings} == {
+            "aws-secret-access-key",
+            "high-entropy-string",
+        }
+
+    def test_raising_the_cap_restores_fusion(self, tmp_path: Path) -> None:
+        """The same file, with the line under the limit, fuses as usual.
+
+        Together with the test above this pins that the unfused path is caused by
+        the cap and not by something about the file.
+        """
+
+        from tests.vendor_fixtures import AWS_SECRET_ACCESS_KEY  # type: ignore
+
+        target = tmp_path / "config.env"
+        target.write_text(f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"\n', encoding="utf-8")
+
+        result = scan_path(target, config(max_line_length=100))
+
+        assert result.errors == ()
+        assert [finding.rule_id for finding in result.findings] == ["aws-secret-access-key"]
+        assert result.findings[0].detector is DetectorKind.COMPOSITE
+
+    def test_a_capped_file_still_loses_no_detection(self, tmp_path: Path) -> None:
+        """Capping adds a finding; it must never remove one.
+
+        The direction of the difference is the whole point. The capped scan
+        reports *more* rule ids than the uncapped one, because it declines to
+        fuse -- so ``uncapped <= capped`` on rule ids, always. A cap that made
+        the result smaller would be a cap that lost detections.
+        """
+
+        from tests.vendor_fixtures import AWS_SECRET_ACCESS_KEY  # type: ignore
+
+        target = tmp_path / "bundle.js"
+        target.write_text(
+            "x" * 500 + "\n" + f'aws_secret_access_key = "{AWS_SECRET_ACCESS_KEY}"\n',
+            encoding="utf-8",
+        )
+
+        capped = scan_path(target, config(max_line_length=100))
+        uncapped = scan_path(target, config(max_line_length=DEFAULT_MAX_LINE_LENGTH))
+        capped_rules = {finding.rule_id for finding in capped.findings}
+        uncapped_rules = {finding.rule_id for finding in uncapped.findings}
+
+        assert uncapped_rules <= capped_rules
+        assert "aws-secret-access-key" in capped_rules
+        assert capped_rules - uncapped_rules == {"high-entropy-string"}
 
 
 # ---------------------------------------------------------------------------

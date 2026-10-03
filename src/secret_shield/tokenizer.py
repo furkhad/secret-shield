@@ -203,11 +203,20 @@ class Token:
     written to a report, a log, or a
     :class:`~secret_shield.models.Finding`.
 
+    **``length`` is not the span.** :meth:`candidates` collapses escape
+    sequences, so the characters a token carries can be fewer than the
+    characters it covers: ``"a\\nb"`` yields the value ``anb`` and a
+    :attr:`length` of three over a span of five. Overlap testing needs the span,
+    because that is what a pattern rule's offsets are measured in, so both ends
+    are recorded rather than derived.
+
     Attributes:
         value: The raw candidate text. Never persisted.
         line: 1-based line number.
         column: 1-based column of the first character of the value.
         offset: 0-based character offset of the value within the file text.
+        end_offset: 0-based character offset just past the value's own text in
+            the file, so the token covers ``[offset, end_offset)``.
         delimiter: The quote character used, or ``""`` for an unquoted value.
         origin: ``"quoted"`` or ``"unquoted-assignment"``.
     """
@@ -216,6 +225,7 @@ class Token:
     line: int
     column: int
     offset: int
+    end_offset: int
     delimiter: str
     origin: str
 
@@ -224,6 +234,16 @@ class Token:
         """Length of the raw value in characters."""
 
         return len(self.value)
+
+    @property
+    def span(self) -> tuple[int, int]:
+        """``(offset, end_offset)``, the exact source range this token covers.
+
+        Measured in the coordinates a pattern rule reports in, which is what
+        Stage 4's fusion layer compares. See the note on :attr:`length`.
+        """
+
+        return (self.offset, self.end_offset)
 
     def __repr__(self) -> str:
         # Never include the raw value, even when tracebacks or debuggers print
@@ -303,6 +323,9 @@ def candidates(text: str) -> list[Token]:
                     line=line,
                     column=column + 1,
                     offset=index + 1,
+                    # ``next_index`` is just past the closing quote, so the value's
+                    # own text ends one character before it.
+                    end_offset=next_index - 1,
                     delimiter=character,
                     origin=ORIGIN_QUOTED,
                 )
@@ -334,6 +357,7 @@ def candidates(text: str) -> list[Token]:
                                 line=line,
                                 column=column + (value_start - index),
                                 offset=value_start,
+                                end_offset=run_end,
                                 delimiter="",
                                 origin=ORIGIN_UNQUOTED,
                             )
@@ -370,7 +394,7 @@ def _keep_plausible(tokens: list[Token]) -> list[Token]:
             continue
         if has_non_secret_structure(token.value):
             continue
-        key = (token.offset, token.offset + token.length)
+        key = token.span
         if key in seen:
             continue
         seen.add(key)
