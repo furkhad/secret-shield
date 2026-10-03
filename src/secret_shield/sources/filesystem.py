@@ -89,6 +89,7 @@ import errno
 import os
 import stat
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Final
@@ -110,6 +111,7 @@ from ..scanner import ScanConfig
 from ..tokenizer import candidates
 
 __all__ = [
+    "DEFAULT_JOBS",
     "DEFAULT_MAX_FILES",
     "DEFAULT_MAX_LINE_LENGTH",
     "FileEntry",
@@ -145,6 +147,12 @@ string, so a tree with ten million files would otherwise allocate without bound.
 The default is far above any real repository. Reaching it produces a
 ``too-many-files`` error, so the resulting partial result cannot be mistaken for
 a clean scan.
+"""
+
+DEFAULT_JOBS: Final[int] = 1
+"""Default number of worker threads to use.
+
+1 means serial behavior (no threading). The default is deterministic.
 """
 
 #: Maps a binary verdict onto the error code Stage 1 already established, so
@@ -197,6 +205,7 @@ class PathScanConfig:
     registry: DetectorRegistry | None = None
     max_line_length: int = DEFAULT_MAX_LINE_LENGTH
     max_files: int = DEFAULT_MAX_FILES
+    jobs: int = DEFAULT_JOBS
 
     def __post_init__(self) -> None:
         if not isinstance(self.scan, ScanConfig):
@@ -214,6 +223,10 @@ class PathScanConfig:
             )
         _require_positive_int(self.max_line_length, "max_line_length")
         _require_positive_int(self.max_files, "max_files")
+        _require_positive_int(self.jobs, "jobs")
+        # Avoid excessive threads - cap reasonably
+        if self.jobs > 64:
+            raise ValueError("jobs must be at most 64")
 
     def rules(self) -> DetectorRegistry:
         """Return the pattern rules to use, defaulting to the shipped catalog.
@@ -240,6 +253,7 @@ def default_path_scan_config() -> PathScanConfig:
         registry=None,
         max_line_length=DEFAULT_MAX_LINE_LENGTH,
         max_files=DEFAULT_MAX_FILES,
+        jobs=DEFAULT_JOBS,
     )
 
 
@@ -624,28 +638,66 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
 
     walked = walk(target, settings)
     registry = settings.rules()
-    findings: list[Finding] = []
     errors: list[ScanError] = list(walked.errors)
+    jobs = settings.jobs
+
+    if jobs <= 1 or len(walked.files) <= 1:
+        findings: list[Finding] = []
+        files_scanned = 0
+        bytes_scanned = 0
+
+        for entry in walked.files:
+            outcome = _analyze_file(entry, settings, registry=registry)
+            findings.extend(outcome.findings)
+            errors.extend(outcome.errors)
+            if outcome.analyzed:
+                files_scanned += 1
+                bytes_scanned += outcome.size
+
+        return _result(
+            started,
+            findings=tuple(sorted(findings, key=lambda finding: finding.sort_key)),
+            errors=tuple(
+                sorted(errors, key=lambda error: (error.path or "", error.code or "", error.reason))
+            ),
+            files_scanned=files_scanned,
+            bytes_scanned=bytes_scanned,
+        )
+
+    findings: list[Finding] = []
     files_scanned = 0
     bytes_scanned = 0
 
-    for entry in walked.files:
-        outcome = _analyze_file(entry, settings, registry=registry)
-        findings.extend(outcome.findings)
-        errors.extend(outcome.errors)
-        if outcome.analyzed:
-            files_scanned += 1
-            bytes_scanned += outcome.size
+    # Use bounded executor; do not submit more than needed. Files are pre-sorted
+    # for determinism - but when aggregating, we must sort findings by sort_key
+    # and errors deterministically regardless of completion order.
+    with ThreadPoolExecutor(max_workers=jobs) as executor:
+        futures = [executor.submit(_analyze_file, entry, settings, registry=registry) for entry in walked.files]
+        for future in as_completed(futures):
+            try:
+                outcome = future.result()
+            except Exception:
+                # Worker exceptions should not leak raw content; convert to a generic scan error
+                errors.append(
+                    ScanError(
+                        "unexpected error while scanning file",
+                        path=target.name if target.name else str(target),
+                        code="scan-error",
+                    )
+                )
+                continue
+            findings.extend(outcome.findings)
+            errors.extend(outcome.errors)
+            if outcome.analyzed:
+                files_scanned += 1
+                bytes_scanned += outcome.size
 
     return _result(
         started,
-        # Files are already in sorted order, so this sorts within files rather
-        # than across the tree. Both halves matter: the result of a scan should
-        # not depend on the order the filesystem handed entries back, and
-        # ``sorted_findings`` exists for callers who want a fresh view rather
-        # than the one the scan already produced.
         findings=tuple(sorted(findings, key=lambda finding: finding.sort_key)),
-        errors=tuple(errors),
+        errors=tuple(
+            sorted(errors, key=lambda error: (error.path or "", error.code or "", error.reason))
+        ),
         files_scanned=files_scanned,
         bytes_scanned=bytes_scanned,
     )

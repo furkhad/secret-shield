@@ -484,6 +484,14 @@ SETTINGS: Final[tuple[Setting, ...]] = (
         "Ids of vendor rules to switch off. There is no allow list; see the "
         "module docstring for why.",
     ),
+    # -- scan behavior ------------------------------------------------------
+    Setting(
+        "scan",
+        "jobs",
+        SettingKind.INTEGER,
+        "Number of worker threads to use for scanning files. 1 means serial.",
+        minimum=1,
+    ),
 )
 """The whole configuration schema, in one place."""
 
@@ -736,6 +744,14 @@ def _coerce_mapping_value(
         if isinstance(raw, bool) or not isinstance(raw, int):
             raise fail("an integer" if kind is SettingKind.INTEGER else "an integer or null", raw)
         _check_range(setting, float(raw), layer=layer, location=location)
+        # Extra validation for jobs
+        if setting.key == "scan.jobs" and raw > 64:
+            raise ConfigError(
+                f"{location}: jobs must be at most 64",
+                layer=layer,
+                key=setting.key,
+                location=location,
+            )
         return raw
 
     if kind is SettingKind.NUMBER:
@@ -815,6 +831,14 @@ def _coerce_env_value(
             )
         number = int(text)
         _check_range(setting, float(number), layer=layer, location=location)
+        # Extra validation for jobs to match PathScanConfig
+        if setting.key == "scan.jobs" and number > 64:
+            raise ConfigError(
+                f"{location}: jobs must be at most 64",
+                layer=layer,
+                key=setting.key,
+                location=location,
+            )
         return number
 
     if kind is SettingKind.NUMBER:
@@ -1184,7 +1208,11 @@ def _read_overrides_layer(
 _SCAN_CONFIG_KEYS: Final[tuple[str, ...]] = ("scan.max_file_size",)
 """Settings that become fields of ScanConfig."""
 
-_PATH_SCAN_KEYS: Final[tuple[str, ...]] = ("scan.max_files", "scan.max_line_length")
+_PATH_SCAN_KEYS: Final[tuple[str, ...]] = (
+    "scan.max_files",
+    "scan.max_line_length",
+    "scan.jobs",
+)
 """Settings that become fields of PathScanConfig."""
 
 _ENTROPY_KEYS: Final[tuple[str, ...]] = (
@@ -1330,6 +1358,7 @@ def _build_path_scan(
             registry=registry,
             max_line_length=directory.max_line_length,
             max_files=directory.max_files,
+            jobs=directory.jobs,
         )
     except (TypeError, ValueError) as exc:
         # PathScanConfig checks only types and two positive integers, so this is
