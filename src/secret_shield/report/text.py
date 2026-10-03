@@ -13,6 +13,10 @@ boring:
   whoever reads the report.
 * No colours and no timestamps. Output is plain ASCII-safe text that is
   byte-stable between runs, so two scans of the same tree can be diffed.
+* The correlation digest is printed by default and can be omitted with
+  ``include_fingerprint=False``. It is a truncated digest of the value, not the
+  value, but an unkeyed digest of a low-entropy credential is brute-forceable,
+  so a report bound for a public URL should not carry one.
 * Every rendered line fits in :data:`LINE_WIDTH`, so a hostile filename cannot
   push a finding's fields out of alignment.
 
@@ -40,11 +44,17 @@ _INDENT: Final[str] = "  "
 _FIELD_INDENT: Final[str] = "     "
 
 
-def render_text(result: ScanResult) -> str:
+def render_text(result: ScanResult, *, include_fingerprint: bool = True) -> str:
     """Render a scan result as human-readable text.
 
     Args:
         result: The scan to describe.
+        include_fingerprint: Whether to print each finding's correlation digest.
+            ``True`` by default, which is what makes two occurrences of one
+            secret recognisable in a report. Pass ``False`` when the report will
+            be published somewhere the digest should not appear: an unkeyed
+            digest of a low-entropy value is brute-forceable, so for a password
+            the fingerprint is a smaller leak than the value but still a leak.
 
     Returns:
         A deterministic report string. The same result always renders to the
@@ -57,7 +67,7 @@ def render_text(result: ScanResult) -> str:
 
     sections: list[str] = [
         _render_header(result),
-        _render_findings(result),
+        _render_findings(result, include_fingerprint=include_fingerprint),
         _render_advice(result),
         _render_errors(result),
         _render_summary(result),
@@ -75,7 +85,7 @@ def _render_header(result: ScanResult) -> str:
     return "\n".join(lines)
 
 
-def _render_findings(result: ScanResult) -> str:
+def _render_findings(result: ScanResult, *, include_fingerprint: bool) -> str:
     findings = result.sorted_findings()
     if not findings:
         return ""
@@ -85,12 +95,12 @@ def _render_findings(result: ScanResult) -> str:
         "",
     ]
     for index, finding in enumerate(findings, start=1):
-        lines.append(_render_finding(index, finding))
+        lines.append(_render_finding(index, finding, include_fingerprint=include_fingerprint))
         lines.append("")
     return "\n".join(lines)
 
 
-def _render_finding(index: int, finding: Finding) -> str:
+def _render_finding(index: int, finding: Finding, *, include_fingerprint: bool) -> str:
     severity = finding.severity.label.upper()
     location = finding.location
     headline = (
@@ -103,19 +113,21 @@ def _render_finding(index: int, finding: Finding) -> str:
         else "not measured"
     )
 
-    return "\n".join(
-        [
-            headline,
-            _wrap(location.to_display(), prefix=f"{_FIELD_INDENT}at         : "),
-            f"{_FIELD_INDENT}masked     : {finding.masked_value}",
-            f"{_FIELD_INDENT}length     : {finding.value_length} characters",
-            f"{_FIELD_INDENT}fingerprint: {finding.value_fingerprint}",
-            f"{_FIELD_INDENT}entropy    : {entropy}",
-            f"{_FIELD_INDENT}confidence : {finding.confidence.label} "
-            f"(detected by {finding.detector.value})",
-            _wrap(_ASSESSMENT, prefix=f"{_FIELD_INDENT}assessment : "),
-        ]
+    fields = [
+        headline,
+        _wrap(location.to_display(), prefix=f"{_FIELD_INDENT}at         : "),
+        f"{_FIELD_INDENT}masked     : {finding.masked_value}",
+        f"{_FIELD_INDENT}length     : {finding.value_length} characters",
+    ]
+    if include_fingerprint:
+        fields.append(f"{_FIELD_INDENT}fingerprint: {finding.value_fingerprint}")
+    fields.append(f"{_FIELD_INDENT}entropy    : {entropy}")
+    fields.append(
+        f"{_FIELD_INDENT}confidence : {finding.confidence.label} "
+        f"(detected by {finding.detector.value})"
     )
+    fields.append(_wrap(_ASSESSMENT, prefix=f"{_FIELD_INDENT}assessment : "))
+    return "\n".join(fields)
 
 
 def _render_advice(result: ScanResult) -> str:

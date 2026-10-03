@@ -247,6 +247,7 @@ class MergedMatch:
         source_kind: SourceKind = SourceKind.FILE,
         commit: str | None = None,
         commit_time: int | None = None,
+        fingerprint_key: bytes | None = None,
     ) -> Finding:
         """Materialise the redacted :class:`~secret_shield.models.Finding`.
 
@@ -254,6 +255,15 @@ class MergedMatch:
         fingerprints it and drops it, and no attribute of the result can hold
         it. Nothing is logged on the way, and no exception anywhere in this call
         interpolates a value.
+
+        Args:
+            path: File path recorded on the finding.
+            source_kind: Whether the text came from a file or from Git history.
+            commit: Commit hash, when scanning history.
+            commit_time: Commit timestamp, when scanning history.
+            fingerprint_key: Optional HMAC key for the correlation digest. See
+                :func:`~secret_shield.masking.fingerprint`. ``None`` keeps the
+                unkeyed SHA-256 default every existing caller relies on.
         """
 
         line, column = self.location
@@ -265,6 +275,7 @@ class MergedMatch:
                 source_kind=source_kind,
                 commit=commit,
                 commit_time=commit_time,
+                fingerprint_key=fingerprint_key,
             )
 
         rule = self.pattern.rule
@@ -285,6 +296,7 @@ class MergedMatch:
             ),
             raw_value=self.raw_value,
             policy=rule.mask_policy,
+            fingerprint_key=fingerprint_key,
             entropy=self.pattern.entropy,
             matched_keywords=self.pattern.matched_keywords,
             remediation=rule.remediation,
@@ -492,6 +504,7 @@ def analyze_text(
     source_kind: SourceKind = SourceKind.FILE,
     commit: str | None = None,
     commit_time: int | None = None,
+    fingerprint_key: bytes | None = None,
 ) -> tuple[Finding, ...]:
     """Run both detectors over one text and return fused, redacted findings.
 
@@ -513,6 +526,11 @@ def analyze_text(
         source_kind: Whether the text came from a file or from Git history.
         commit: Commit hash, when scanning history.
         commit_time: Commit timestamp, when scanning history.
+        fingerprint_key: Optional HMAC key for the correlation digest of every
+            finding built here. See :func:`~secret_shield.masking.fingerprint`.
+            It reaches
+            :meth:`~secret_shield.models.Finding.from_match` and nowhere else;
+            ``None`` -- the default -- keeps the unkeyed SHA-256 behaviour.
 
     Returns:
         Findings in the canonical order -- by path, then position, then rule --
@@ -543,6 +561,7 @@ def analyze_text(
             source_kind=source_kind,
             commit=commit,
             commit_time=commit_time,
+            fingerprint_key=fingerprint_key,
         )
         for match in merged
     )

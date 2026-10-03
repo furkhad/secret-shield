@@ -1,47 +1,48 @@
 """Module entry point: ``python -m secret_shield``.
 
-The CLI is not implemented yet. Scanning works -- ``scan_file`` and
-``render_text`` are the supported interface for now -- but there is no
-directory traversal, no argument parsing and no output format selection, so
-this module exists to give an honest, non-zero exit code instead of an
-``AttributeError`` traceback, and to reserve the entry point that later stages
-will fill in.
+This module exists so that the package is runnable without installation, and it
+holds no logic of its own. It delegates to :func:`secret_shield.cli.main` and
+turns the returned exit code into the process's exit status.
 
-That is deliberate. A ``python -m secret_shield <path>`` that silently scanned
-nothing would be worse than one that refuses to start.
+The two invocations are deliberately equivalent rather than merely similar::
 
-When ``cli.py`` lands, ``main`` here will simply delegate to it.
+    python -m secret_shield --help
+    secret-shield --help
+
+produce byte-identical output, because the program name argparse reports is
+fixed to ``TOOL_NAME`` instead of being read from ``sys.argv[0]`` -- which under
+``-m`` would otherwise be ``__main__.py``.
+
+Note:
+    Earlier stages shipped an ``EXIT_NOT_IMPLEMENTED`` stub here. The exit code
+    it used still exists in :mod:`secret_shield.exit_codes` for capabilities that
+    genuinely are absent, but nothing in this release returns it: there is no
+    flag for an unimplemented feature, so the honest answer to "scan Git
+    history" is a usage error, not a stub.
 """
 
 from __future__ import annotations
 
-import sys
+from collections.abc import Sequence
 
-from .exit_codes import EXIT_NOT_IMPLEMENTED
+from .cli import main as _cli_main
 
-_NOT_IMPLEMENTED_MESSAGE = (
-    "SecretShield CLI is not implemented yet. The library can scan a single "
-    "file:\n"
-    "  python -c \"import secret_shield as s; "
-    "print(s.render_text(s.scan_file('path/to/file')))\"\n"
-    "See README.md for the current status."
-)
+__all__ = ["main"]
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Report that the CLI is unavailable.
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the SecretShield CLI and return its exit code.
 
     Args:
-        argv: Accepted for signature compatibility with the future CLI and
-            deliberately unused.
+        argv: Arguments without the program name. ``None`` means ``sys.argv[1:]``.
 
     Returns:
-        :data:`~secret_shield.exit_codes.EXIT_NOT_IMPLEMENTED`.
+        One of the values in :mod:`secret_shield.exit_codes`. Never raises, so a
+        bad command line, a failed scan or an interrupt is reported as a number
+        rather than a traceback.
     """
 
-    del argv  # Unused until the real CLI exists; keeps the signature stable.
-    print(_NOT_IMPLEMENTED_MESSAGE, file=sys.stderr)
-    return EXIT_NOT_IMPLEMENTED
+    return _cli_main(argv)
 
 
 if __name__ == "__main__":

@@ -394,11 +394,22 @@ class RawMatch:
         source_kind: SourceKind = SourceKind.FILE,
         commit: str | None = None,
         commit_time: int | None = None,
+        fingerprint_key: bytes | None = None,
     ) -> Finding:
         """Convert to a redacted :class:`~secret_shield.models.Finding`.
 
         The raw value is passed to ``from_match``, which masks and fingerprints
         it and then drops it. Nothing about this object outlives the call.
+
+        Args:
+            path: File path recorded on the finding.
+            source_kind: Whether the text came from a file or from Git history.
+            commit: Commit hash, when scanning history.
+            commit_time: Commit timestamp, when scanning history.
+            fingerprint_key: Optional HMAC key for the correlation digest. See
+                :func:`~secret_shield.masking.fingerprint`. ``None`` -- the
+                default -- keeps the unkeyed SHA-256 behaviour every existing
+                caller relies on.
         """
 
         return Finding.from_match(
@@ -418,6 +429,7 @@ class RawMatch:
             ),
             raw_value=self.value,
             policy=self.rule.mask_policy,
+            fingerprint_key=fingerprint_key,
             entropy=self.entropy,
             matched_keywords=self.matched_keywords,
             remediation=self.rule.remediation,
@@ -707,6 +719,7 @@ def findings_from(
     source_kind: SourceKind = SourceKind.FILE,
     commit: str | None = None,
     commit_time: int | None = None,
+    fingerprint_key: bytes | None = None,
 ) -> tuple[Finding, ...]:
     """Convert raw matches to redacted findings, dropping exact duplicates.
 
@@ -722,6 +735,8 @@ def findings_from(
         source_kind: Whether the text came from a file or from Git history.
         commit: Commit hash, when scanning history.
         commit_time: Commit timestamp, when scanning history.
+        fingerprint_key: Optional HMAC key for the correlation digest. ``None``
+            keeps the unkeyed default.
 
     Returns:
         Findings in deterministic order.
@@ -741,6 +756,7 @@ def findings_from(
                 source_kind=source_kind,
                 commit=commit,
                 commit_time=commit_time,
+                fingerprint_key=fingerprint_key,
             )
         )
 

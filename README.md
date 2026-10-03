@@ -1,45 +1,137 @@
 # SecretShield
 
-SecretShield is a Python security scanner for detecting accidentally exposed secrets and credentials in source code, configuration files, and Git repositories.
+SecretShield is a Python security scanner for detecting accidentally exposed secrets and credentials in source code and configuration files.
 
 ## Status
 
-**Stage 1 — a working single-file scanner. No vendor rules, no CLI yet.**
+**Stage 8 — a working CLI over vendor rules, directory traversal and layered
+configuration. No Git history scanning.**
 
-You can now scan one text file and read a human-readable report:
-
-```python
-import secret_shield
-
-result = secret_shield.scan_file("config/settings.py")
-print(secret_shield.render_text(result))
+```bash
+secret-shield scan .
+secret-shield scan src --format json --output report.json
+secret-shield rules list
 ```
 
-Detection today is **entropy screening only**. It finds values that look like
-machine-generated key material regardless of vendor, and it deliberately cannot
-tell you whether any of them is a real credential. A SHA-1 commit hash, a UUID
-and a leaked API key are the same shape to an entropy measurement, so all three
-are reported, at MEDIUM severity and PROBABLE confidence, for a human to
-dismiss.
+Detection combines a **vendor pattern catalog** with an **entropy screen**. A
+pattern match knows what it matched; the entropy screen catches values no vendor
+claims. Both report *candidates*, never verdicts: nothing is verified against an
+issuing service, so every finding is something a human should look at.
 
 | Component | State |
 | --- | --- |
 | `masking` — redaction, fingerprints, sanitized excerpts | Done, tested |
 | `models` — `Finding`, `Location`, `ScanResult`, enums | Done, tested |
-| `exit_codes` — the CI exit-code contract | Done |
+| `exit_codes` — the CI exit-code contract | Done, tested |
 | `entropy` — Shannon entropy, evenness ratio, charset families | Done, tested |
-| `tokenizer` — conservative candidate extraction | Done, tested |
-| `detectors` — high-entropy rule (one rule, MEDIUM ceiling) | Done, tested |
-| `scanner` — `scan_file`, safe text reading, statistics | Done, tested |
-| `report` — `render_text`, pure and deterministic | Done, tested |
-| Vendor rules (AWS, GitHub, Stripe, ...) | Not started |
-| Directory traversal, allowlists, context scoring | Not started |
-| Filesystem and Git history scanning | Not started |
-| CLI, JSON and Markdown reports | Not started |
+| `tokenizer` — conservative candidate extraction and structural filters | Done, tested |
+| `detectors` — 14 vendor rules + the entropy rule | Done, tested |
+| `filters` — binary sniffing, path exclusion, symlink safety | Done, tested |
+| `pipeline` — match fusion, context scoring, dedup | Done, tested |
+| `config` — layered settings: defaults, file, environment, overrides | Done, tested |
+| `sources/` — filesystem traversal | Done, tested |
+| `report` — `render_text`, `render_json`, `render_markdown` | Done, tested |
+| `cli` — argparse front end, exit codes, atomic `--output` | Done, tested |
+| Git history scanning | Not started |
+| SARIF, baselines, allowlists | Not started |
 
-`python -m secret_shield` still exits with code `5`. There is no CLI until
-directory traversal exists; scanning one file at a time by hand is not the
-intended interface.
+## Command line
+
+Two invocations, identical output:
+
+```bash
+secret-shield scan TARGET          # installed console script
+python -m secret_shield scan TARGET   # no installation needed
+```
+
+`TARGET` is a file or a directory. A directory is walked subject to the
+configured limits.
+
+```bash
+secret-shield scan config/settings.py
+secret-shield scan . --format json | jq '.summary'
+secret-shield scan . --jobs 8 --max-depth 3 --fail-on high
+secret-shield scan src --min-confidence probable --fingerprint none
+secret-shield scan . --format markdown --output report.md
+secret-shield rules list
+secret-shield rules list --format json
+```
+
+`--help`, `scan --help` and `rules --help` document every option. Each flag maps
+onto an existing configuration setting, so a limit set on the command line and
+the same limit set in a file are validated identically.
+
+### Exit codes
+
+CI branches on these, so they are part of the contract:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Nothing met the failure threshold |
+| `1` | Findings reached the threshold (`--fail-on`) |
+| `2` | Usage error: bad arguments, an invalid target, or bad configuration |
+| `3` | The scan finished with errors, so the result is **partial** |
+| `4` | Internal error |
+| `5` | Not implemented — unreachable in this release |
+| `130` | Interrupted |
+
+**Partial results beat findings.** `3` wins over `1`, so a scan that could not
+read every input can never pass a pipeline that only distinguishes `0` from `1`.
+A truncated scan must not be able to look like a clean one.
+
+### Streams
+
+**stdout carries the report and nothing else.** Diagnostics, per-file failures
+and the `--output` confirmation go to stderr, so `--format json` is always
+pipeable. With `--output`, stdout stays completely empty.
+
+No raw secret, and no source line, reaches either stream.
+
+### Determinism
+
+Two runs of the same command over an unchanged tree produce byte-identical
+output, and `--jobs 1` and `--jobs 8` agree. Nothing in a report depends on wall
+clock time. Fingerprints are stable across runs under `--fingerprint sha256`, or
+`hmac` with a fixed key:
+
+```bash
+SECRETSHIELD_FINGERPRINT_KEY="$(openssl rand -hex 32)" \
+    secret-shield scan . --format json --output report.json
+```
+
+`--fingerprint hmac` requires that key rather than inventing a random one per
+run, because a per-run key would make two runs of the same command disagree.
+`--fingerprint none` omits the digest entirely, for a report bound for a public
+URL — an unkeyed digest of a low-entropy value can be brute-forced.
+
+### Configuration
+
+Settings are layered. Later layers win:
+
+1. built-in defaults
+2. `pyproject.toml` `[tool.secretshield]`
+3. `.secretshield.toml`, then `.secretshield.json`
+4. `SECRETSHIELD_*` environment variables
+5. command line options
+
+```toml
+# .secretshield.toml
+[scan]
+jobs = 4
+max_file_size = 1048576
+
+[paths]
+max_depth = 3
+ignored_directories = ["vendor"]
+
+[rules]
+disabled = ["stripe-test-key"]
+```
+
+Rules are disabled through configuration, not through a flag. An unknown
+setting, an out-of-range value or an unknown rule id is an error rather than
+being silently ignored — a misspelled limit that is quietly dropped applies a
+limit nobody set.
 
 ## Goals
 
@@ -91,40 +183,62 @@ enforced by tests, because each one is expensive to add late.
    expression syntax, and call parentheses — plus anything spanning a line, on
    the grounds that key material is single-line. Each filter states what it
    suppresses in its docstring, and each accepted cost has a test pinning it.
-   Scanning this repository's own source produces zero findings.
+   Scanning this repository's own `src/` produces zero findings.
+
+8. **The exit code is the interface.** A tool that reports a problem and exits
+   `0` is a tool CI learns to ignore, and one that maps every failure to `1`
+   cannot tell a clean run from a broken one. `exit_codes.py` is the single
+   source of truth, partial results outrank findings, and no flag exists for a
+   capability the release does not have.
+
+9. **stdout is a data channel.** The report is the only thing written there, so
+   `--format json` is pipeable. Diagnostics are separate, and `--output` leaves
+   stdout empty. A report can be captured by a CI job without anything else
+   corrupting it.
+
+10. **Argument values are configuration, not a back door.** Command line
+    options are passed into `load_config()` as the highest-precedence
+    `overrides` layer rather than assigned onto a config object afterwards, so
+    `--jobs 0` fails with the same message and the same exit code as
+    `jobs = 0` in a file. There is no way for a flag to carry a value the
+    configuration schema would have rejected.
 
 ## Project structure
 
 ```
 src/secret_shield/          # src layout: tests cannot import repo files by accident
 ├── __init__.py             # public API, __version__
-├── __main__.py             # `python -m secret_shield` (placeholder until the CLI lands)
+├── __main__.py             # `python -m secret_shield`; delegates to cli.main
+├── cli.py                  # argparse front end; no detection logic
 ├── models.py               # Finding, Location, ScanError, ScanResult, enums
 ├── masking.py              # mask(), fingerprint(), sanitize_excerpt()
 ├── exit_codes.py           # the CI exit-code contract
 ├── entropy.py              # Shannon entropy, evenness, charset families
 ├── tokenizer.py            # candidate extraction and structural filters
-├── detectors/              # detection rules; currently one entropy rule
-│   └── entropy_rule.py
-├── scanner.py              # scan_file(): read one text file, return a result
+├── config.py               # layered settings: defaults, file, environ, overrides
+├── pipeline.py             # match fusion, context scoring, dedup
+├── scanner.py              # per-file read + analyse
+├── detectors/
+│   ├── catalog.py          # the vendor rules
+│   ├── base.py             # Rule, RawMatch
+│   └── entropy_rule.py     # the entropy screen
+├── filters/                # binary sniffing, path exclusion
+├── sources/
+│   └── filesystem.py       # scan_path(): directory traversal
 └── report/                 # ScanResult -> str; no I/O, no colours
-    └── text.py
+    ├── text.py
+    ├── json_report.py
+    └── markdown.py
 tests/
 ├── conftest.py             # synthetic fixtures; src/ bootstrap
-├── unit/
-│   ├── test_masking.py
-│   ├── test_models.py
-│   ├── test_entropy.py
-│   ├── test_tokenizer.py
-│   ├── test_entropy_rule.py
-│   ├── test_scanner.py
-│   └── test_text_report.py
-└── integration/
-    └── test_single_file_scan.py
+├── vendor_fixtures.py      # obviously fake credentials, marker-checked
+├── unit/                   # one module per unit
+├── integration/            # layers composed
+└── functional/             # the CLI, run as a subprocess
 ```
 
-Modules still to come: `config.py`, `pipeline.py`, `filters/`, `sources/`
-(filesystem and Git history), `cli.py`, and JSON and Markdown reporters.
+Modules still to come: `sources/git.py` (history scanning), SARIF output,
+baselines, and allowlists.
 
 ## Development
 
@@ -144,19 +258,37 @@ pytest tests/unit/test_masking.py
 pytest -k fingerprint
 ```
 
-Scan a file the way the tests do:
+Check the CLI the way a user would:
 
 ```bash
-python -c "import secret_shield as s; print(s.render_text(s.scan_file('README.md')))"
+python -m secret_shield --help
+python -m secret_shield scan . --format json | jq '.summary'
+python -m secret_shield rules list
 ```
+
+`tests/functional/test_cli.py` runs the CLI as a real subprocess, which is the
+only way to observe the exit status a parent sees and whether stdout stays pure
+through a pipe.
 
 ## Security
 
 Never place real credentials in this repository. Use synthetic test secrets only.
 
-Test values follow placeholders published in vendor documentation, such as
-`AKIAIOSFODNN7EXAMPLE`, which is AWS's own documented example key. Any secret
-added later must be obviously fabricated and must live under `tests/`.
+Test values must be obviously fabricated and must live under `tests/`.
+`tests/vendor_fixtures.py` enforces this: every fixture carries the substring
+`SYNTH`, and a module-level check raises if one does not, so a failure message
+naming a fixture cannot read like a live credential.
+
+Scanning this repository reports findings only inside `tests/`, and only the
+entropy rule plus the vendor rules matching those synthetic values. `src/` is
+clean.
+
+One known false positive is worth naming, because it is the kind of thing a
+user will hit in their first minute: `--fingerprint` entry points and other
+dotted configuration strings are reported by the entropy rule. In this
+repository, `pyproject.toml`'s own `secret-shield = "secret_shield.cli:main"`
+line is such a finding. The entropy screen cannot tell a dotted module path from
+a token — that is the cost of a rule that works on values no vendor claims.
 
 If you believe you have found a real credential in this repository, please
 report it privately rather than opening a public issue.

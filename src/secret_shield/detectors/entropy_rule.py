@@ -66,6 +66,7 @@ __all__ = [
     "RULE_ID",
     "RULE_NAME",
     "REMEDIATION",
+    "FALSE_POSITIVE_NOTES",
     "DEFAULT_MIN_LENGTH",
     "DEFAULT_MIN_RAW_ENTROPY",
     "DEFAULT_MIN_NORMALIZED_ENTROPY",
@@ -85,6 +86,18 @@ REMEDIATION: Final[str] = (
     "is live before acting on it. If it is a secret, rotate it at the issuing "
     "service and move it out of source control into a secret manager or "
     "environment variable, then remove it from the history of this repository."
+)
+
+FALSE_POSITIVE_NOTES: Final[str] = (
+    "Expect hits on Git commit and blob hashes, UUIDs and other identifiers, "
+    "checksums, minified and bundled assets, embedded images encoded as data "
+    "URIs, compiled binary blobs, and hex-encoded API keys that belong to a "
+    "vendor rule which did not match. Any value that is random-looking has the "
+    "same shape as a credential, and entropy alone cannot tell them apart: a "
+    "SHA-1 hash and a leaked token score identically. Suppress these by "
+    "disabling this rule for a path in configuration, or by lowering "
+    "entropy.min_length or entropy.min_normalized_entropy, rather than by "
+    "trusting a single hit."
 )
 
 DEFAULT_MIN_LENGTH: Final[int] = 20
@@ -254,6 +267,7 @@ class EntropyCandidate:
         source_kind: SourceKind = SourceKind.FILE,
         commit: str | None = None,
         commit_time: int | None = None,
+        fingerprint_key: bytes | None = None,
     ) -> Finding:
         """Convert to a redacted :class:`~secret_shield.models.Finding`.
 
@@ -270,6 +284,9 @@ class EntropyCandidate:
             source_kind: Whether the text came from a file or from Git history.
             commit: Commit hash, when scanning history.
             commit_time: Commit timestamp, when scanning history.
+            fingerprint_key: Optional HMAC key for the correlation digest. See
+                :func:`~secret_shield.masking.fingerprint`. ``None`` keeps the
+                unkeyed SHA-256 default.
 
         Note:
             The value is masked and fingerprinted inside ``from_match`` and then
@@ -293,6 +310,7 @@ class EntropyCandidate:
             ),
             raw_value=self.value,
             policy=FULLY_REDACTED,
+            fingerprint_key=fingerprint_key,
             entropy=self.entropy,
             matched_keywords=(),
             remediation=REMEDIATION,
@@ -387,6 +405,7 @@ def detect(
     source_kind: SourceKind = SourceKind.FILE,
     commit: str | None = None,
     commit_time: int | None = None,
+    fingerprint_key: bytes | None = None,
 ) -> tuple[Finding, ...]:
     """Turn qualifying candidates into findings.
 
@@ -408,6 +427,8 @@ def detect(
         source_kind: Whether the text came from a file or from Git history.
         commit: Commit hash, when scanning history.
         commit_time: Commit timestamp, when scanning history.
+        fingerprint_key: Optional HMAC key for the correlation digest. ``None``
+            keeps the unkeyed SHA-256 default.
 
     Returns:
         Findings in candidate order. Each one is at most MEDIUM severity and
@@ -424,6 +445,7 @@ def detect(
             source_kind=source_kind,
             commit=commit,
             commit_time=commit_time,
+            fingerprint_key=fingerprint_key,
         )
         for candidate in entropy_candidates(tokens, settings)
     )

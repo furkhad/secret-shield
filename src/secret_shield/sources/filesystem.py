@@ -805,6 +805,7 @@ def _analyze_file(
         )
 
     rules = registry if registry is not None else config.rules()
+    fingerprint_key = config.scan.fingerprint_key
     capped, over_length = _cap_long_lines(text, config.max_line_length)
 
     if over_length:
@@ -819,14 +820,19 @@ def _analyze_file(
         # a file the result already declares as only partly analysed. The
         # alternative -- fusing on offsets known to be wrong -- can attach a
         # vendor rule's severity to an unrelated value.
-        findings = findings_from(find_matches(text, rules), display)
-        findings = findings + detect_entropy(candidates(capped), display, config.scan.entropy)
+        findings = findings_from(
+            find_matches(text, rules), display, fingerprint_key=fingerprint_key
+        )
+        findings = findings + detect_entropy(
+            candidates(capped), display, config.scan.entropy, fingerprint_key=fingerprint_key
+        )
     else:
         findings = analyze_text(
             text,
             display,
             registry=rules,
             entropy=config.scan.entropy,
+            fingerprint_key=fingerprint_key,
         )
 
     errors: tuple[ScanError, ...] = ()

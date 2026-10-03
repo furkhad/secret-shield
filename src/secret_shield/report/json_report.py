@@ -15,7 +15,7 @@ from .security import safe_json_serialize, sanitize_text
 SCHEMA_VERSION: Final[str] = "1.0"
 
 
-def _finding_to_dict(finding: Finding) -> dict[str, Any]:
+def _finding_to_dict(finding: Finding, *, include_fingerprint: bool) -> dict[str, Any]:
     """Convert a Finding to a dict for JSON serialization."""
     data: dict[str, Any] = {
         "rule_id": finding.rule_id,
@@ -31,9 +31,11 @@ def _finding_to_dict(finding: Finding) -> dict[str, Any]:
         },
         "masked_value": finding.masked_value,
         "value_length": finding.value_length,
-        "fingerprint": finding.value_fingerprint,
         "entropy": finding.entropy,
     }
+
+    if include_fingerprint:
+        data["fingerprint"] = finding.value_fingerprint
 
     if finding.matched_keywords:
         data["matched_keywords"] = tuple(sorted(finding.matched_keywords))
@@ -59,11 +61,14 @@ def _error_to_dict(error: ScanError) -> dict[str, Any]:
     return data
 
 
-def render_json(result: ScanResult) -> str:
+def render_json(result: ScanResult, *, include_fingerprint: bool = True) -> str:
     """Render a ScanResult as deterministic JSON.
 
     Args:
         result: The scan result to render
+        include_fingerprint: Whether each finding carries its ``fingerprint``
+            correlation digest. Omit it for a report bound for a public URL: an
+            unkeyed digest of a low-entropy value is brute-forceable.
 
     Returns:
         JSON string with deterministic key ordering
@@ -89,7 +94,7 @@ def render_json(result: ScanResult) -> str:
             "findings_count": len(findings),
             "errors_count": len(errors),
         },
-        "findings": [_finding_to_dict(f) for f in findings],
+        "findings": [_finding_to_dict(f, include_fingerprint=include_fingerprint) for f in findings],
         "errors": [_error_to_dict(e) for e in errors],
     }
 

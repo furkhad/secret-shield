@@ -30,11 +30,14 @@ def _get_unique_remediations(findings: tuple[Finding, ...]) -> list[str]:
     return result
 
 
-def render_markdown(result: ScanResult) -> str:
+def render_markdown(result: ScanResult, *, include_fingerprint: bool = True) -> str:
     """Render a ScanResult as deterministic Markdown.
 
     Args:
         result: The scan result to render
+        include_fingerprint: Whether each finding shows its correlation digest.
+            Omit it for a report bound for a public URL: an unkeyed digest of a
+            low-entropy value is brute-forceable.
 
     Returns:
         Markdown string
@@ -83,9 +86,14 @@ def render_markdown(result: ScanResult) -> str:
             sev = _escape_table_cell(f.severity.label)
             loc = _escape_table_cell(f"{f.location.path}:{f.location.line}:{f.location.column}")
             masked = _escape_table_cell(f.masked_value)
-            details = _escape_table_cell(
-                f"len={f.value_length}, conf={f.confidence}, det={f.detector}, fp={f.value_fingerprint[:8]}"
-            )
+            detail_parts = [
+                f"len={f.value_length}",
+                f"conf={f.confidence}",
+                f"det={f.detector}",
+            ]
+            if include_fingerprint:
+                detail_parts.append(f"fp={f.value_fingerprint[:8]}")
+            details = _escape_table_cell(", ".join(detail_parts))
             lines.append(f"| {rule} | {sev} | {loc} | `{masked}` | {details} |")
         lines.append("")
 

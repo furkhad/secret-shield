@@ -60,10 +60,17 @@ class ScanConfig:
     Attributes:
         max_file_size: Largest file to read, in bytes.
         entropy: Thresholds for the entropy detector.
+        fingerprint_key: Optional HMAC key for the correlation digest carried by
+            every finding this configuration produces. ``None`` -- the default --
+            uses unkeyed SHA-256, which is what deduplication and
+            :meth:`~secret_shield.models.Finding.secret_key` have always used.
+            See :func:`~secret_shield.masking.fingerprint` for when a key is
+            worth supplying.
     """
 
     max_file_size: int = DEFAULT_MAX_FILE_SIZE
     entropy: EntropyRuleConfig = field(default_factory=default_entropy_config)
+    fingerprint_key: bytes | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.max_file_size, bool) or not isinstance(self.max_file_size, int):
@@ -74,6 +81,16 @@ class ScanConfig:
             raise TypeError(
                 f"entropy must be an EntropyRuleConfig, got {type(self.entropy).__name__}"
             )
+        # An empty key is not a key: hmac.new() rejects it, and letting it
+        # through here would turn a caller mistake into a scan-time crash.
+        if self.fingerprint_key is not None:
+            if not isinstance(self.fingerprint_key, (bytes, bytearray)):
+                raise TypeError(
+                    "fingerprint_key must be bytes or None, got "
+                    f"{type(self.fingerprint_key).__name__}"
+                )
+            if not self.fingerprint_key:
+                raise ValueError("fingerprint_key must not be empty")
 
 
 DEFAULT_SCAN_CONFIG: Final[ScanConfig] = ScanConfig()
