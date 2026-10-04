@@ -120,7 +120,21 @@ from .exit_codes import (
 from .filters.paths import default_path_filter_config
 from .masking import strip_control_characters
 from .models import TOOL_NAME, TOOL_VERSION, Confidence, ScanResult, Severity
-from .report import render_json, render_markdown, render_text
+from .baseline import (
+    BASELINE_SCHEMA_VERSION,
+    BASELINE_TOOL_NAME,
+    Baseline,
+    BaselineComparison,
+    BaselineEntry,
+    FindingClassification,
+    FindingIdentity,
+    compare_with_baseline,
+    create_baseline_from_result,
+    load_baseline,
+    save_baseline,
+    update_baseline,
+)
+from .report import render_json, render_markdown, render_sarif, render_text
 from .scanner import ScanConfig
 from .sources import GitScanConfig, HistoryScan, PathScanConfig, scan_history, scan_path
 from .sources.git_cmd import MAX_TIMEOUT_SECONDS, MIN_TIMEOUT_SECONDS
@@ -148,13 +162,14 @@ help, version and error output. Otherwise argparse would report the program as
 a diff of two runs of "the same" command would never be empty.
 """
 
-FORMATS: Final[tuple[str, ...]] = ("text", "json", "markdown")
+FORMATS: Final[tuple[str, ...]] = ("text", "json", "markdown", "sarif")
 """Report renderings the CLI can select. One name per renderer."""
 
 RENDERERS: Final[dict[str, Any]] = {
     "text": render_text,
     "json": render_json,
     "markdown": render_markdown,
+    "sarif": render_sarif,
 }
 
 FINGERPRINT_MODES: Final[tuple[str, ...]] = ("sha256", "hmac", "none")
@@ -533,6 +548,26 @@ def _add_reporting_arguments(parser: argparse.ArgumentParser) -> None:
         ),
     )
 
+    baseline = parser.add_argument_group("baseline")
+    baseline.add_argument(
+        "--baseline",
+        metavar="FILE",
+        type=_positive,
+        help=(
+            "load a baseline file to suppress known findings; "
+            "only new findings are reported and can fail the build"
+        ),
+    )
+    baseline.add_argument(
+        "--baseline-output",
+        metavar="FILE",
+        type=_positive,
+        help=(
+            "write an updated baseline to FILE, adding new findings to it; "
+            "requires --baseline to be set"
+        ),
+    )
+
     reporting = parser.add_argument_group("exit status")
     reporting.add_argument(
         "--fail-on",
@@ -545,6 +580,15 @@ def _add_reporting_arguments(parser: argparse.ArgumentParser) -> None:
             + ". Default: "
             + DEFAULT_FAIL_ON
             + ", meaning any reported finding fails"
+        ),
+    )
+    reporting.add_argument(
+        "--fail-on-new",
+        action="store_true",
+        default=False,
+        help=(
+            "when using --baseline, exit 1 only if there are new findings "
+            "(not in baseline); baselined findings do not cause failure"
         ),
     )
 
@@ -990,21 +1034,86 @@ def _apply_min_confidence(result: ScanResult, threshold: Confidence) -> ScanResu
     return dataclasses.replace(result, findings=kept)
 
 
-def _exit_code(result: ScanResult, fail_on: Severity | None) -> int:
+def _exit_code(
+    result: ScanResult,
+    fail_on: Severity | None,
+    *,
+    comparison: BaselineComparison | None = None,
+    fail_on_new: bool = False,
+) -> int:
     """Return the exit code for a completed scan.
 
     Errors are checked before findings. A scan that could not read every input
     describes a partial tree, and reporting that as ``1`` would let a truncated
     scan pass a pipeline that only distinguishes ``0`` from ``1``.
+
+    When a baseline comparison is provided and ``fail_on_new`` is True, only
+    new findings (not in baseline) can cause EXIT_FINDINGS.
     """
 
     if result.errors:
         return EXIT_SCAN_ERROR
+
+    if comparison is not None and fail_on_new:
+        # With baseline, only new findings can cause failure
+        if fail_on is None:
+            return EXIT_SUCCESS
+        if any(finding.severity >= fail_on for finding in comparison.new_findings):
+            return EXIT_FINDINGS
+        return EXIT_SUCCESS
+
     if fail_on is None:
         return EXIT_SUCCESS
     if any(finding.severity >= fail_on for finding in result.findings):
         return EXIT_FINDINGS
     return EXIT_SUCCESS
+
+
+def _handle_baseline(
+    args: argparse.Namespace, result: ScanResult
+) -> tuple[ScanResult, BaselineComparison | None, Baseline | None]:
+    """Handle baseline loading, comparison, and updating.
+
+    Returns a tuple of (filtered_result, comparison, updated_baseline).
+    The filtered_result has only new findings if baseline is used and --fail-on-new is set.
+    """
+    if not args.baseline:
+        return result, None, None
+
+    baseline_path = Path(args.baseline)
+    try:
+        baseline = load_baseline(baseline_path)
+    except FileNotFoundError:
+        _diagnostic(f"baseline file not found: {baseline_path}")
+        return result, None, None
+    except ValueError as exc:
+        _diagnostic(f"invalid baseline: {exc}")
+        return result, None, None
+
+    comparison = compare_with_baseline(result, baseline)
+
+    # Report stale entries on stderr
+    if comparison.has_stale_entries:
+        _diagnostic(
+            f"baseline has {len(comparison.stale_entries)} stale entr"
+            f"{'y' if len(comparison.stale_entries) == 1 else 'ies'} "
+            f"(no matching finding in current scan)"
+        )
+
+    # If --fail-on-new, filter findings to only new ones for the report
+    if args.fail_on_new:
+        filtered_result = dataclasses.replace(result, findings=comparison.new_findings)
+    else:
+        filtered_result = result
+
+    updated_baseline = None
+    if args.baseline_output:
+        if not args.baseline:
+            _diagnostic("--baseline-output requires --baseline")
+            return filtered_result, comparison, None
+        updated_baseline = update_baseline(baseline, result, TOOL_VERSION)
+
+    return filtered_result, comparison, updated_baseline
 
 
 def _report_errors(result: ScanResult) -> None:
@@ -1094,12 +1203,26 @@ def _command_scan(args: argparse.Namespace) -> int:
     settings = _apply_fingerprint_key(config.path_scan, fingerprint_key)
     result = _apply_min_confidence(scan_path(target, settings), args.min_confidence)
 
-    failure = _render_and_write(args, result, include_fingerprint=include_fingerprint)
+    # Handle baseline
+    filtered_result, comparison, updated_baseline = _handle_baseline(args, result)
+
+    failure = _render_and_write(args, filtered_result, include_fingerprint=include_fingerprint)
     if failure is not None:
         return failure
 
-    _report_errors(result)
-    return _exit_code(result, args.fail_on)
+    # Write updated baseline if requested
+    if updated_baseline is not None:
+        try:
+            save_baseline(updated_baseline, Path(args.baseline_output))
+        except OSError as exc:
+            _diagnostic(f"cannot write baseline: {exc}")
+            return EXIT_SCAN_ERROR
+        _diagnostic(f"updated baseline written to {_one_line(args.baseline_output)}")
+
+    _report_errors(filtered_result)
+    return _exit_code(
+        result, args.fail_on, comparison=comparison, fail_on_new=args.fail_on_new
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1227,13 +1350,27 @@ def _command_git(args: argparse.Namespace) -> int:
     scan = scan_history(target, config)
     result = _apply_min_confidence(scan.result, args.min_confidence)
 
-    failure = _render_and_write(args, result, include_fingerprint=include_fingerprint)
+    # Handle baseline
+    filtered_result, comparison, updated_baseline = _handle_baseline(args, result)
+
+    failure = _render_and_write(args, filtered_result, include_fingerprint=include_fingerprint)
     if failure is not None:
         return failure
 
-    _report_errors(result)
+    # Write updated baseline if requested
+    if updated_baseline is not None:
+        try:
+            save_baseline(updated_baseline, Path(args.baseline_output))
+        except OSError as exc:
+            _diagnostic(f"cannot write baseline: {exc}")
+            return EXIT_SCAN_ERROR
+        _diagnostic(f"updated baseline written to {_one_line(args.baseline_output)}")
+
+    _report_errors(filtered_result)
     _report_history_coverage(scan)
-    return _exit_code(result, args.fail_on)
+    return _exit_code(
+        result, args.fail_on, comparison=comparison, fail_on_new=args.fail_on_new
+    )
 
 
 # ---------------------------------------------------------------------------

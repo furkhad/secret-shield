@@ -269,8 +269,6 @@ class TestHelpAndVersion:
         stdout = run_cli("scan", "--help").stdout
 
         assert "--no-color" not in stdout
-        assert "--sarif" not in stdout
-        assert "--baseline" not in stdout
         assert "--git" not in stdout
 
     def test_rules_help_documents_the_listing(self) -> None:

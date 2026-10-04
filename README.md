@@ -34,7 +34,7 @@ issuing service, so every finding is something a human should look at.
 | `sources/` — Git history scanning | Done, tested |
 | `report` — `render_text`, `render_json`, `render_markdown` | Done, tested |
 | `cli` — argparse front end, exit codes, atomic `--output` | Done, tested |
-| SARIF, baselines, allowlists | Not started |
+| SARIF, baselines | Done, tested |
 
 ## Command line
 
@@ -294,7 +294,7 @@ tests/
 └── functional/             # the CLI, run as a subprocess
 ```
 
-Modules still to come: SARIF output, baselines, and allowlists.
+Modules still to come: allowlists.
 
 ## Development
 
