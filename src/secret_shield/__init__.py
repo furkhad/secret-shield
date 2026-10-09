@@ -29,11 +29,16 @@ What is implemented, and what each layer guarantees:
   may be looked at at all.
 * :mod:`secret_shield.scanner` -- reading one text file safely and reporting
   what it could not read, rather than raising.
-* :mod:`secret_shield.sources` -- where secrets are looked for. Today that means
-  a file or a whole directory tree.
-* :mod:`secret_shield.report` -- rendering a result as plain text.
+* :mod:`secret_shield.sources` -- where secrets are looked for: a file, a whole
+  directory tree, or a Git repository's history.
+* :mod:`secret_shield.report` -- rendering a result as plain text, JSON,
+  Markdown or SARIF.
+* :mod:`secret_shield.baseline` -- suppressing known findings so a scan can
+  fail only on new ones.
+* :mod:`secret_shield.cli` -- the ``secret-shield`` command line front end.
 
-Not implemented yet: a CLI, Git history scanning, and JSON and Markdown output.
+Not implemented yet: allowlists, custom user-supplied rules, and network
+verification of a finding.
 
 Importing this package has no side effects: no configuration is read, no
 filesystem is touched and nothing is printed.

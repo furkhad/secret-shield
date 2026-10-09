@@ -51,7 +51,8 @@ EXIT_INTERNAL_ERROR: Final[int] = 4
 EXIT_NOT_IMPLEMENTED: Final[int] = 5
 """A requested capability does not exist in this release.
 
-Used by :mod:`secret_shield.__main__` while the CLI is still being built.
+Reserved for a capability not yet implemented. No subcommand returns it: a
+flag is only added once the code behind it exists.
 """
 
 EXIT_INTERRUPTED: Final[int] = 130

@@ -312,7 +312,7 @@ class MergedMatch:
         )
 
 
-def pattern_order(match: RawMatch) -> tuple[int, int, int, int]:
+def pattern_order(match: RawMatch) -> tuple[int, int, str, int]:
     """Return the deterministic identity ordering key for a pattern match.
 
     Specificity, then priority, then id, then position. Every component is a
@@ -481,7 +481,7 @@ def dedupe(findings: Iterable[Finding]) -> tuple[Finding, ...]:
     Order is preserved: the first finding for a key wins.
     """
 
-    seen: set[tuple[str, str, int | None, int | None, str, str | None]] = set()
+    seen: set[tuple[str, str, int | None, int | None, str | None, str]] = set()
     kept: list[Finding] = []
 
     for finding in findings:

@@ -18,6 +18,12 @@ repos:
     rev: v1.10.0
     hooks:
       - id: mypy
+        # `pass_filenames` keeps mypy checking the source tree (mirroring the
+        # CI lint job) instead of every changed file: with filenames appended,
+        # a pre-commit run over an editable install hits the "duplicate module"
+        # error on src/secret_shield, which fails the hook before type checking
+        # ever happens.
+        pass_filenames: false
         args: [--strict, src/secret_shield]
         additional_dependencies: [types-toml]
         types_or: [python, pyi]

@@ -249,7 +249,7 @@ jobs:
           with tempfile.TemporaryDirectory() as tmpdir:
               cfg = load_config(project_root=Path(tmpdir))
               results = scan_path(cfg.path_scan_config(), Path('.'))
-          
+
           # Filter findings outside tests/ with HIGH_CONFIDENCE or higher
           # (vendor rule matches). Entropy findings are PROBABLE (2) and allowed.
           suspicious = []
@@ -258,7 +258,7 @@ jobs:
               if not path.startswith('tests/'):
                   if finding.confidence.value >= 3:  # HIGH_CONFIDENCE or VERIFIED
                       suspicious.append(finding)
-          
+
           if suspicious:
               print('FAIL: Real credential patterns found in non-test files:', file=sys.stderr)
               for f in suspicious:

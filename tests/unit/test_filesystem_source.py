@@ -314,7 +314,7 @@ class TestSymlinksAreNotFollowedByDefault:
 
 
 class TestSymlinksInsideTheRoot:
-    def _allowing(self) -> FilesystemScanConfig:
+    def _allowing(self) -> PathScanConfig:
         return config(filters=PathFilterConfig(follow_symlinks=True))
 
     def test_a_link_to_an_inside_file_is_scanned(

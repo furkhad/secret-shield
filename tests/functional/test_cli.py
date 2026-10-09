@@ -909,6 +909,237 @@ class TestFingerprint:
 
 
 # ---------------------------------------------------------------------------
+# Baselines
+# ---------------------------------------------------------------------------
+
+
+class TestBaselines:
+    """A baseline lets a build fail on new secrets without failing on the backlog.
+
+    The wiring is the whole point: the baseline module is unit-tested elsewhere,
+    but until these tests existed nothing checked that the CLI could create a
+    baseline, apply one, or refuse the combinations that would silently do
+    nothing.
+    """
+
+    @pytest.fixture
+    def repo(self, tmp_path: Path) -> Path:
+        """A scan root separate from the baseline file, so the walk never sees it."""
+
+        root = tmp_path / "repo"
+        root.mkdir()
+        return root
+
+    @pytest.fixture
+    def baseline_path(self, tmp_path: Path) -> Path:
+        return tmp_path / "baseline.json"
+
+    def write_secret(self, path: Path, value: str = SYNTHETIC_AWS_KEY) -> None:
+        path.write_text(f'KEY = "{value}"\n', encoding="utf-8")
+
+    def test_baseline_output_creates_a_fresh_baseline(
+        self, repo: Path, baseline_path: Path
+    ) -> None:
+        self.write_secret(repo / "first.py")
+
+        result = run_cli("scan", str(repo), "--baseline-output", str(baseline_path))
+
+        assert result.returncode == 1, result.stderr
+        assert_no_synthetic_value(result)
+        raw = baseline_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        assert data["schema_version"] == "1.0"
+        assert data["tool"]["name"] == "secret-shield"
+        assert len(data["entries"]) == 1
+        # A baseline records identity, never secret material.
+        assert SYNTHETIC_AWS_KEY not in raw
+
+    def test_the_baseline_is_owner_only(self, repo: Path, baseline_path: Path) -> None:
+        self.write_secret(repo / "first.py")
+
+        run_cli("scan", str(repo), "--baseline-output", str(baseline_path))
+
+        assert baseline_path.stat().st_mode & 0o777 == 0o600
+
+    def test_a_baselined_finding_is_suppressed_by_fail_on_new(
+        self, repo: Path, baseline_path: Path
+    ) -> None:
+        self.write_secret(repo / "first.py")
+        assert (
+            run_cli(
+                "scan", str(repo), "--baseline-output", str(baseline_path)
+            ).returncode
+            == 1
+        )
+
+        result = run_cli(
+            "scan",
+            str(repo),
+            "--baseline",
+            str(baseline_path),
+            "--fail-on-new",
+            "--format",
+            "json",
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["findings"] == []
+        assert_no_synthetic_value(result)
+
+    def test_a_new_finding_fails_but_is_the_only_one_reported(
+        self, repo: Path, baseline_path: Path
+    ) -> None:
+        self.write_secret(repo / "first.py")
+        assert (
+            run_cli(
+                "scan", str(repo), "--baseline-output", str(baseline_path)
+            ).returncode
+            == 1
+        )
+        self.write_secret(repo / "second.py")
+
+        result = run_cli(
+            "scan",
+            str(repo),
+            "--baseline",
+            str(baseline_path),
+            "--fail-on-new",
+            "--format",
+            "json",
+        )
+
+        assert result.returncode == 1, result.stderr
+        findings = json.loads(result.stdout)["findings"]
+        assert len(findings) == 1
+        assert findings[0]["location"]["path"].endswith("second.py")
+        assert_no_synthetic_value(result)
+
+    def test_baseline_alone_reports_every_finding(
+        self, repo: Path, baseline_path: Path
+    ) -> None:
+        """Without ``--fail-on-new`` a baseline compares, it does not suppress."""
+
+        self.write_secret(repo / "first.py")
+        assert (
+            run_cli(
+                "scan", str(repo), "--baseline-output", str(baseline_path)
+            ).returncode
+            == 1
+        )
+
+        result = run_cli(
+            "scan",
+            str(repo),
+            "--baseline",
+            str(baseline_path),
+            "--format",
+            "json",
+        )
+
+        assert result.returncode == 1, result.stderr
+        assert len(json.loads(result.stdout)["findings"]) == 1
+
+    def test_baseline_output_updates_an_existing_baseline(
+        self, repo: Path, baseline_path: Path
+    ) -> None:
+        self.write_secret(repo / "first.py")
+        assert (
+            run_cli(
+                "scan", str(repo), "--baseline-output", str(baseline_path)
+            ).returncode
+            == 1
+        )
+        self.write_secret(repo / "second.py")
+
+        update = run_cli(
+            "scan",
+            str(repo),
+            "--baseline",
+            str(baseline_path),
+            "--baseline-output",
+            str(baseline_path),
+        )
+        assert update.returncode == 1, update.stderr
+        assert (
+            len(json.loads(baseline_path.read_text(encoding="utf-8"))["entries"]) == 2
+        )
+
+        result = run_cli(
+            "scan",
+            str(repo),
+            "--baseline",
+            str(baseline_path),
+            "--fail-on-new",
+            "--format",
+            "json",
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["findings"] == []
+
+    def test_fail_on_new_without_baseline_is_a_usage_error(
+        self, secret_file: Path
+    ) -> None:
+        """Otherwise the flag would be accepted and silently do nothing."""
+
+        result = run_cli("scan", str(secret_file), "--fail-on-new")
+
+        assert result.returncode == 2
+        assert "--baseline" in result.stderr
+
+    def test_a_missing_baseline_warns_without_suppressing(
+        self, repo: Path, baseline_path: Path
+    ) -> None:
+        """A typo cannot turn a real finding into a passing build."""
+
+        self.write_secret(repo / "first.py")
+        missing = baseline_path.parent / "not-here.json"
+
+        result = run_cli(
+            "scan",
+            str(repo),
+            "--baseline",
+            str(missing),
+            "--baseline-output",
+            str(baseline_path),
+            "--format",
+            "json",
+        )
+
+        assert result.returncode == 1, result.stderr
+        assert "not found" in result.stderr
+        assert not baseline_path.exists()
+        assert len(json.loads(result.stdout)["findings"]) == 1
+
+    def test_baseline_does_not_match_a_changed_value(
+        self, repo: Path, baseline_path: Path
+    ) -> None:
+        """A secret swapped at the same spot is new, not silently baselined."""
+
+        target = repo / "first.py"
+        self.write_secret(target)
+        assert (
+            run_cli(
+                "scan", str(repo), "--baseline-output", str(baseline_path)
+            ).returncode
+            == 1
+        )
+        self.write_secret(target, "AKIA7Q9ZLMTESTKEY12B")
+
+        result = run_cli(
+            "scan",
+            str(repo),
+            "--baseline",
+            str(baseline_path),
+            "--fail-on-new",
+            "--format",
+            "json",
+        )
+
+        assert result.returncode == 1, result.stderr
+        assert len(json.loads(result.stdout)["findings"]) == 1
+
+
+# ---------------------------------------------------------------------------
 # Exit codes
 # ---------------------------------------------------------------------------
 

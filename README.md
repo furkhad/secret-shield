@@ -32,9 +32,9 @@ issuing service, so every finding is something a human should look at.
 | `config` — layered settings: defaults, file, environment, overrides | Done, tested |
 | `sources/` — filesystem traversal | Done, tested |
 | `sources/` — Git history scanning | Done, tested |
-| `report` — `render_text`, `render_json`, `render_markdown` | Done, tested |
+| `report` — `render_text`, `render_json`, `render_markdown`, `render_sarif` | Done, tested |
 | `cli` — argparse front end, exit codes, atomic `--output` | Done, tested |
-| SARIF, baselines | Done, tested |
+| `baseline` — load, compare, create, update known findings | Done, tested |
 
 ## Command line
 
@@ -188,6 +188,31 @@ line is silent when nothing was skipped, so its absence means everything
 reachable from `HEAD` was searched. Anything genuinely unreadable is an error,
 not a silent skip, so a partial result always says so.
 
+### Baselines
+
+A baseline records the findings a project has decided to live with, so a build
+can fail on **new** secrets without failing on the existing backlog. Create one
+from the first run, commit it, then compare against it:
+
+```bash
+secret-shield scan . --baseline-output .secretshield-baseline.json
+secret-shield scan . --baseline .secretshield-baseline.json --fail-on-new
+```
+
+`--baseline-output FILE` writes a baseline of this scan's findings. Given
+`--baseline FILE` as well, it writes that baseline updated with anything new
+since; entries for secrets that have since been removed are preserved rather
+than dropped. `--baseline FILE` on its own compares and reports *stale* entries
+(ones with no matching finding) on stderr, but suppresses nothing: without
+`--fail-on-new` every finding is still reported and can still fail the run.
+`--fail-on-new` requires `--baseline` and narrows both the report and the exit
+code to findings that are not in the baseline.
+
+A finding is matched by rule, path, position and the fingerprint of the value,
+so a secret *changed* at the same spot is new, not silently baselined. A
+baseline holds no raw secret and no source line — only identities, categories,
+severities and confidences.
+
 ## Goals
 
 - Detect common API keys, tokens, passwords, private keys, and database credentials
@@ -273,6 +298,7 @@ src/secret_shield/          # src layout: tests cannot import repo files by acci
 ├── config.py               # layered settings: defaults, file, environ, overrides
 ├── pipeline.py             # match fusion, context scoring, dedup
 ├── scanner.py              # per-file read + analyse
+├── baseline.py             # load/compare/update finding baselines
 ├── detectors/
 │   ├── catalog.py          # the vendor rules
 │   ├── base.py             # Rule, RawMatch
@@ -285,7 +311,8 @@ src/secret_shield/          # src layout: tests cannot import repo files by acci
 └── report/                 # ScanResult -> str; no I/O, no colours
     ├── text.py
     ├── json_report.py
-    └── markdown.py
+    ├── markdown.py
+    └── sarif.py
 tests/
 ├── conftest.py             # synthetic fixtures; src/ bootstrap
 ├── vendor_fixtures.py      # obviously fake credentials, marker-checked
@@ -379,6 +406,11 @@ limit you discover in CI is a surprise.
   limits on the command line and does not read `.secretshield.toml`, so a
   history scan cannot be silently reshaped by a repository-local file that the
   scanner is about to audit.
+- **A baseline that cannot be loaded warns and is ignored, it does not stop the
+  scan.** If `--baseline FILE` names a missing or malformed file, the run says
+  so on stderr and reports every finding, so a typo cannot silently suppress a
+  real secret or make a build pass; `--baseline-output` is then not written
+  either.
 
 ## License
 

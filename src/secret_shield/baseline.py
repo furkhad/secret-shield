@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from .models import Finding, ScanResult
-from .masking import is_fingerprint, strip_control_characters
+from .masking import is_fingerprint
 
 __all__ = [
     "BASELINE_SCHEMA_VERSION",
@@ -64,7 +64,9 @@ class FindingIdentity:
             raise ValueError("path must be a non-empty string")
         if self.line is not None and (not isinstance(self.line, int) or self.line < 1):
             raise ValueError("line must be a positive integer or None")
-        if self.column is not None and (not isinstance(self.column, int) or self.column < 1):
+        if self.column is not None and (
+            not isinstance(self.column, int) or self.column < 1
+        ):
             raise ValueError("column must be a positive integer or None")
         if not is_fingerprint(self.value_fingerprint):
             raise ValueError(
@@ -162,8 +164,12 @@ class BaselineEntry:
             category=finding.category.value
             if hasattr(finding.category, "value")
             else str(finding.category),
-            severity=finding.severity.label if hasattr(finding.severity, "label") else str(finding.severity),
-            confidence=finding.confidence.label if hasattr(finding.confidence, "label") else str(finding.confidence),
+            severity=finding.severity.label
+            if hasattr(finding.severity, "label")
+            else str(finding.severity),
+            confidence=finding.confidence.label
+            if hasattr(finding.confidence, "label")
+            else str(finding.confidence),
         )
 
     def sort_key(self) -> tuple[str, str, int | None, int | None, str, str | None]:
@@ -311,8 +317,7 @@ def save_baseline(baseline: Baseline, path: Path) -> None:
 
     try:
         handle, temporary = tempfile.mkstemp(
-            dir=str(parent), prefix=".secretshield-",
-            suffix=".baseline.tmp"
+            dir=str(parent), prefix=".secretshield-", suffix=".baseline.tmp"
         )
     except OSError as exc:
         raise OSError(f"cannot create temporary file in {parent}: {exc}") from None
@@ -374,9 +379,7 @@ class BaselineComparison:
         }
 
 
-def compare_with_baseline(
-    result: ScanResult, baseline: Baseline
-) -> BaselineComparison:
+def compare_with_baseline(result: ScanResult, baseline: Baseline) -> BaselineComparison:
     """Compare scan results against a baseline.
 
     Args:
@@ -414,7 +417,7 @@ def compare_with_baseline(
     return BaselineComparison(
         new_findings=tuple(sorted(new_findings, key=lambda f: f.sort_key)),
         baselined_findings=tuple(sorted(baselined_findings, key=lambda f: f.sort_key)),
-        stale_entries=tuple(sorted(stale_entries, key=lambda e: e.sort_key)),
+        stale_entries=tuple(sorted(stale_entries, key=lambda e: e.sort_key())),
     )
 
 
@@ -444,7 +447,9 @@ def create_baseline_from_result(result: ScanResult, tool_version: str) -> Baseli
     )
 
 
-def update_baseline(baseline: Baseline, result: ScanResult, tool_version: str) -> Baseline:
+def update_baseline(
+    baseline: Baseline, result: ScanResult, tool_version: str
+) -> Baseline:
     """Update a baseline with new findings from a scan result.
 
     New findings are added to the baseline. Stale entries (baseline entries

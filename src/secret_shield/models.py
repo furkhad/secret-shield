@@ -30,7 +30,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Self
 
 from .entropy import MAX_ENTROPY
 from .masking import (
@@ -89,7 +89,7 @@ class _LabelledEnum(enum.Enum):
         return self.name.lower()
 
     @classmethod
-    def from_label(cls, value: str) -> _LabelledEnum:
+    def from_label(cls, value: str) -> Self:
         """Parse a label back into an enum member.
 
         Parsing is case-insensitive and treats ``-`` and ``_`` as equivalent,
@@ -108,9 +108,9 @@ class _LabelledEnum(enum.Enum):
             )
         normalized = value.strip().lower().replace("-", "_")
         try:
-            return cls[normalized.upper()]  # type: ignore[index]
+            return cls[normalized.upper()]
         except KeyError:
-            valid = ", ".join(member.label for member in cls)  # type: ignore[attr-defined]
+            valid = ", ".join(member.label for member in cls)
             raise ValueError(
                 f"unknown {cls.__name__} label {value!r}; valid labels: {valid}"
             ) from None
@@ -450,7 +450,7 @@ class Finding:
         policy: MaskPolicy | None = None,
         fingerprint_key: bytes | None = None,
         entropy: float | None = None,
-        matched_keywords: Iterable[str] = (),
+        matched_keywords: tuple[str, ...] = (),
         remediation: str = "",
     ) -> Finding:
         """Build a finding from a raw match, redacting the value immediately.

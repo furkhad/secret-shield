@@ -39,7 +39,7 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Final
+from typing import Final, Iterable
 
 __all__ = [
     "DEFAULT_IGNORED_DIRECTORIES",
@@ -362,6 +362,9 @@ class Decision:
     def __repr__(self) -> str:
         if self.include:
             return "Decision(include=True)"
+        # self.reason is guaranteed to be not None when include=False
+        # (validated in __post_init__)
+        assert self.reason is not None
         return f"Decision(include=False, reason={self.reason.value!r})"
 
 
@@ -395,10 +398,9 @@ def _validate_names(values: object, name: str) -> frozenset[str]:
 
     if isinstance(values, (str, bytes)):
         raise TypeError(f"{name} must be a collection of strings, not a string")
-    try:
-        items = frozenset(values)
-    except TypeError:
-        raise TypeError(f"{name} must be a collection of strings") from None
+    if not isinstance(values, Iterable):
+        raise TypeError(f"{name} must be a collection of strings")
+    items = frozenset(values)
 
     for item in items:
         if not isinstance(item, str):
@@ -425,10 +427,9 @@ def _validate_extensions(values: object, name: str) -> frozenset[str]:
 
     if isinstance(values, (str, bytes)):
         raise TypeError(f"{name} must be a collection of strings, not a string")
-    try:
-        items = list(values)
-    except TypeError:
-        raise TypeError(f"{name} must be a collection of strings") from None
+    if not isinstance(values, Iterable):
+        raise TypeError(f"{name} must be a collection of strings")
+    items = list(values)
 
     normalized: set[str] = set()
     for item in items:
@@ -464,10 +465,9 @@ def _validate_paths(values: object, name: str) -> tuple[str, ...]:
 
     if isinstance(values, (str, bytes)):
         raise TypeError(f"{name} must be a collection of strings, not a string")
-    try:
-        items = list(values)
-    except TypeError:
-        raise TypeError(f"{name} must be a collection of strings") from None
+    if not isinstance(values, Iterable):
+        raise TypeError(f"{name} must be a collection of strings")
+    items = list(values)
 
     normalized: list[str] = []
     for item in items:

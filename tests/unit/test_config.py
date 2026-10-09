@@ -9,6 +9,7 @@ import pytest
 
 from secret_shield.config import (
     ENV_PREFIX,
+    MAX_CONFIG_BYTES,
     ConfigError,
     ConfigLayer,
     load_config,
@@ -216,6 +217,20 @@ def test_max_file_size_type_validation(tmp_path: Path) -> None:
     write_toml(tmp_path, **{"scan.max_file_size": "10"})
     with pytest.raises(ConfigError):
         load_config(project_root=tmp_path)
+
+
+def test_config_file_size_cap(tmp_path: Path) -> None:
+    """A checkout cannot smuggle a huge file in as settings.
+
+    The cap is checked before parsing, so oversized content is rejected even
+    when it is otherwise syntactically valid TOML.
+    """
+
+    config = tmp_path / ".secretshield.toml"
+    config.write_bytes(b"#" * (MAX_CONFIG_BYTES + 1))
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(project_root=tmp_path)
+    assert "configuration limit" in str(excinfo.value)
 
 
 def test_optional_integer_accepts_null_json(tmp_path: Path) -> None:

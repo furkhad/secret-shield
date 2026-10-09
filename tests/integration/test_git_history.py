@@ -394,9 +394,9 @@ def reverted_repo(tmp_path: Path) -> Repo:
     second_text = f"VALUE = 2\n{line}\nRESULT = VALUE + 1\n"
 
     (repo / "app.py").write_text(first_text, encoding="utf-8")
-    added = commit_all(repo, "first")
+    _ = commit_all(repo, "first")
     (repo / "app.py").write_text(second_text, encoding="utf-8")
-    second = commit_all(repo, "edit")
+    _ = commit_all(repo, "edit")
     (repo / "app.py").write_text(first_text, encoding="utf-8")
     latest = commit_all(repo, "revert")
     (repo / "app.py").write_text(second_text, encoding="utf-8")

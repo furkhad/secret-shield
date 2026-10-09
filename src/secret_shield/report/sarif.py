@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Final
 
-from ..models import Finding, Location, ScanError, ScanResult, Severity
+from ..models import Finding, Location, ScanError, ScanResult
 
 __all__ = ["SARIF_VERSION", "SARIF_SCHEMA_URI", "render_sarif"]
 
@@ -20,7 +20,9 @@ SARIF_VERSION: Final[str] = "2.1.0"
 
 # The SARIF schema URI is split to avoid entropy detection on the long URL.
 # This is a false positive: the URI is a constant, not a secret.
-_SARIF_SCHEMA_BASE: Final[str] = "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cos01/schemas/"
+_SARIF_SCHEMA_BASE: Final[str] = (
+    "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cos01/schemas/"
+)
 _SARIF_SCHEMA_FILE: Final[str] = "sarif.schema.v2.1.0"
 SARIF_SCHEMA_URI: Final[str] = _SARIF_SCHEMA_BASE + _SARIF_SCHEMA_FILE + ".json"
 """URI of the SARIF 2.1.0 JSON schema."""
@@ -34,10 +36,12 @@ _SEVERITY_TO_LEVEL: Final[dict[str, str]] = {
 }
 
 # Mapping from our confidence to SARIF rank (higher = more confident)
-# SARIF doesn't have a direct confidence field, but we can use rank
+# SARIF doesn't have a direct confidence field, but we can use rank.
+# Keys are the enum labels ("high_confidence", not "high-confidence"): the
+# labels are what every report serializes and what production findings carry.
 _CONFIDENCE_TO_RANK: Final[dict[str, float]] = {
     "verified": 100.0,
-    "high-confidence": 90.0,
+    "high_confidence": 90.0,
     "probable": 60.0,
     "candidate": 30.0,
 }
@@ -60,20 +64,30 @@ def _location_to_physical_location(location: Location) -> dict[str, Any]:
 
 def _finding_to_result(finding: Finding, *, rule_index: int) -> dict[str, Any]:
     """Convert a Finding to a SARIF result object."""
-    severity_label = finding.severity.label if hasattr(finding.severity, "label") else str(finding.severity)
-    confidence_label = finding.confidence.label if hasattr(finding.confidence, "label") else str(finding.confidence)
+    severity_label = (
+        finding.severity.label
+        if hasattr(finding.severity, "label")
+        else str(finding.severity)
+    )
+    confidence_label = (
+        finding.confidence.label
+        if hasattr(finding.confidence, "label")
+        else str(finding.confidence)
+    )
     level = _SEVERITY_TO_LEVEL.get(severity_label, "warning")
+    # SARIF has no confidence field, so the confidence becomes the result's
+    # ``rank`` (0.0-100.0, higher is more important). Emitting it keeps the
+    # mapping below from being computed and thrown away.
     rank = _CONFIDENCE_TO_RANK.get(confidence_label, 0.0)
 
     result: dict[str, Any] = {
         "ruleId": finding.rule_id,
         "ruleIndex": rule_index,
         "level": level,
+        "rank": rank,
         "message": {"text": finding.rule_name},
         "locations": [
-            {
-                "physicalLocation": _location_to_physical_location(finding.location)
-            }
+            {"physicalLocation": _location_to_physical_location(finding.location)}
         ],
         "partialFingerprints": {
             "valueFingerprint": finding.value_fingerprint,
@@ -121,7 +135,9 @@ def _error_to_result(error: ScanError, *, rule_index: int) -> dict[str, Any]:
                     "artifactLocation": {"uri": error.path or "<unknown>"},
                 }
             }
-        ] if error.path else [],
+        ]
+        if error.path
+        else [],
         "properties": {
             "kind": "scan-error",
             "code": error.code,
@@ -129,7 +145,9 @@ def _error_to_result(error: ScanError, *, rule_index: int) -> dict[str, Any]:
     }
 
 
-def _build_rules(findings: tuple[Finding, ...]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def _build_rules(
+    findings: tuple[Finding, ...],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Build the SARIF rules array and a mapping from rule_id to rule_index.
 
     Rules are ordered by rule_id for determinism.
@@ -141,7 +159,11 @@ def _build_rules(findings: tuple[Finding, ...]) -> tuple[list[dict[str, Any]], d
     for rule_id in rule_ids:
         # Find the first finding with this rule_id to get metadata
         sample = next(f for f in findings if f.rule_id == rule_id)
-        sample_severity_label = sample.severity.label if hasattr(sample.severity, "label") else str(sample.severity)
+        sample_severity_label = (
+            sample.severity.label
+            if hasattr(sample.severity, "label")
+            else str(sample.severity)
+        )
         rule: dict[str, Any] = {
             "id": rule_id,
             "name": sample.rule_name,
@@ -179,19 +201,25 @@ def _build_run(result: ScanResult, *, include_fingerprint: bool) -> dict[str, An
     rules, rule_id_to_index = _build_rules(findings)
     error_rule_index = len(rules)
     if errors:
-        rules.append({
-            "id": "scan-error",
-            "name": "Scan Error",
-            "shortDescription": {"text": "A recoverable failure during scanning"},
-            "fullDescription": {"text": "The scanner could not read one or more input units."},
-            "defaultConfig": {"level": "error"},
-            "properties": {"kind": "scan-error"},
-        })
+        rules.append(
+            {
+                "id": "scan-error",
+                "name": "Scan Error",
+                "shortDescription": {"text": "A recoverable failure during scanning"},
+                "fullDescription": {
+                    "text": "The scanner could not read one or more input units."
+                },
+                "defaultConfig": {"level": "error"},
+                "properties": {"kind": "scan-error"},
+            }
+        )
 
     # Convert findings to results
     results = []
     for finding in findings:
-        results.append(_finding_to_result(finding, rule_index=rule_id_to_index[finding.rule_id]))
+        results.append(
+            _finding_to_result(finding, rule_index=rule_id_to_index[finding.rule_id])
+        )
 
     # Convert errors to results
     for error in errors:

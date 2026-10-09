@@ -110,11 +110,14 @@ import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, TypeVar
 
+from .detectors import EntropyRuleConfig
 from .detectors.base import DetectorRegistry
 from .detectors.catalog import default_registry
 from .detectors.entropy_rule import default_entropy_config
+from .filters.binary import BinaryConfig
+from .filters.paths import PathFilterConfig
 from .masking import strip_control_characters
 from .models import Severity
 from .scanner import ScanConfig
@@ -865,16 +868,18 @@ def _coerce_env_value(
                 key=setting.key,
                 location=location,
             )
-        number = float(text)
-        if not math.isfinite(number):  # pragma: no cover - unreachable via the pattern
+        float_val = float(text)
+        if not math.isfinite(
+            float_val
+        ):  # pragma: no cover - unreachable via the pattern
             raise ConfigError(
                 f"{location}: {setting.key} must be a finite number",
                 layer=layer,
                 key=setting.key,
                 location=location,
             )
-        _check_range(setting, number, layer=layer, location=location)
-        return number
+        _check_range(setting, float_val, layer=layer, location=location)
+        return float_val
 
     if kind is SettingKind.SEVERITY:
         return _parse_severity(text, setting=setting, layer=layer, location=location)
@@ -1270,12 +1275,15 @@ _BINARY_KEYS: Final[tuple[str, ...]] = (
 """Settings that become fields of BinaryConfig."""
 
 
+_DataclassT = TypeVar("_DataclassT")
+
+
 def _apply(
-    base: object,
+    base: _DataclassT,
     keys: Sequence[str],
     values: Mapping[str, object],
     provenance: Mapping[str, ConfigOrigin],
-) -> object:
+) -> _DataclassT:
     """Return ``base`` with the given settings' merged values applied.
 
     Only keys the merge actually produced are touched, so a target with nothing
@@ -1294,7 +1302,7 @@ def _apply(
     if not updates:
         return base
     try:
-        return dataclasses.replace(base, **updates)
+        return dataclasses.replace(base, **updates)  # type: ignore[type-var]
     except (TypeError, ValueError) as exc:
         # Cross-field rules live in __post_init__, so the wording comes from the
         # class that knows the rule. ConfigError strips control characters from
@@ -1368,12 +1376,18 @@ def _build_path_scan(
     """Assemble the effective scan settings from the merged values."""
 
     base = default_path_scan_config()
-    entropy = _apply(default_entropy_config(), _ENTROPY_KEYS, values, provenance)
-    directory = _apply(base, _PATH_SCAN_KEYS, values, provenance)
-    scan = _apply(base.scan, _SCAN_CONFIG_KEYS, values, provenance)
-    filters = _apply(base.filters, _PATH_FILTER_KEYS, values, provenance)
-    binary = _apply(base.binary, _BINARY_KEYS, values, provenance)
-    registry = _build_registry(values.get("rules.disabled", ()), provenance)
+    entropy: EntropyRuleConfig = _apply(
+        default_entropy_config(), _ENTROPY_KEYS, values, provenance
+    )
+    directory: PathScanConfig = _apply(base, _PATH_SCAN_KEYS, values, provenance)
+    scan: ScanConfig = _apply(base.scan, _SCAN_CONFIG_KEYS, values, provenance)
+    filters: PathFilterConfig = _apply(
+        base.filters, _PATH_FILTER_KEYS, values, provenance
+    )
+    binary: BinaryConfig = _apply(base.binary, _BINARY_KEYS, values, provenance)
+    # values is Mapping[str, object], but "rules.disabled" is always a sequence of strings
+    disabled: Sequence[str] = values.get("rules.disabled", ()) or ()  # type: ignore[assignment]
+    registry = _build_registry(disabled, provenance)
 
     try:
         return dataclasses.replace(
@@ -1472,7 +1486,9 @@ def load_config(
         layers.append(from_env)
 
     if overrides:
-        layers.append(_read_overrides_layer(overrides))
+        from_overrides = _read_overrides_layer(overrides)
+        if from_overrides is not None:
+            layers.append(from_overrides)
 
     # Later layers overwrite earlier ones. Replacement alone is what makes this
     # associative; see the module docstring for why no layer extends another.

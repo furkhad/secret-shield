@@ -528,7 +528,7 @@ def walk(root: str | Path, config: PathScanConfig | None = None) -> WalkResult:
                     skipped.append(SkippedEntry(relative, SkipReason.CIRCULAR_SYMLINK))
                     continue
                 visited.add(identity)
-                children.append((entry.path, relative, entry_depth))
+                children.append((Path(entry.path), relative, entry_depth))
                 continue
 
             if not stat.S_ISREG(info.st_mode):
@@ -551,8 +551,12 @@ def walk(root: str | Path, config: PathScanConfig | None = None) -> WalkResult:
                 truncated = True
                 break
 
-            identity = (info.st_dev, info.st_ino) if is_link else None
-            files.append(FileEntry(entry.path, relative, info.st_size, identity))
+            file_identity: tuple[int, int] | None = (
+                (info.st_dev, info.st_ino) if is_link else None
+            )
+            files.append(
+                FileEntry(Path(entry.path), relative, info.st_size, file_identity)
+            )
 
         if truncated:
             errors.append(
@@ -662,11 +666,11 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
     errors: list[ScanError] = list(walked.errors)
     jobs = settings.jobs
 
-    if jobs <= 1 or len(walked.files) <= 1:
-        findings: list[Finding] = []
-        files_scanned = 0
-        bytes_scanned = 0
+    findings: list[Finding] = []
+    files_scanned = 0
+    bytes_scanned = 0
 
+    if jobs <= 1 or len(walked.files) <= 1:
         for entry in walked.files:
             outcome = _analyze_file(entry, settings, registry=registry)
             findings.extend(outcome.findings)
@@ -691,10 +695,6 @@ def scan_path(path: str | Path, config: PathScanConfig | None = None) -> ScanRes
             files_scanned=files_scanned,
             bytes_scanned=bytes_scanned,
         )
-
-    findings: list[Finding] = []
-    files_scanned = 0
-    bytes_scanned = 0
 
     # Use bounded executor; do not submit more than needed. Files are pre-sorted
     # for determinism - but when aggregating, we must sort findings by sort_key
@@ -1009,8 +1009,10 @@ def _reason_of(decision: object) -> SkipReason:
     return reason if isinstance(reason, SkipReason) else SkipReason.IGNORED_PATH
 
 
-def _os_error(prefix: str, path: str, code: str, exc: OSError) -> ScanError:
-    """Build a :class:`ScanError` from an ``OSError``.
+def _os_error(
+    prefix: str, path: str, code: str, exc: OSError | ValueError
+) -> ScanError:
+    """Build a :class:`ScanError` from an ``OSError`` or ``ValueError``.
 
     Only ``strerror`` and the exception class name are used. Never the path, the
     filename or any part of the message a library might have built from file
@@ -1018,7 +1020,7 @@ def _os_error(prefix: str, path: str, code: str, exc: OSError) -> ScanError:
     thing being looked for, and it is the one string guaranteed to reach a log.
     """
 
-    detail = exc.strerror or exc.__class__.__name__
+    detail = getattr(exc, "strerror", None) or exc.__class__.__name__
     return ScanError(f"{prefix}: {detail}", path=path, code=code)
 
 

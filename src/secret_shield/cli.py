@@ -1,9 +1,10 @@
 """The ``secret-shield`` command line interface.
 
-Stage 8 puts a production interface around the scanner, the layered
-configuration and the three report renderers. This module contains **no
-detection logic at all**: it parses arguments, resolves configuration, calls
-:func:`~secret_shield.sources.filesystem.scan_path`, hands the resulting
+This module is a production interface around two sources -- the working tree
+(:func:`~secret_shield.sources.filesystem.scan_path`) and Git history
+(:func:`~secret_shield.sources.git_history.scan_history`) -- the layered
+configuration and the four report renderers. It contains **no detection logic
+at all**: it parses arguments, resolves configuration, hands the resulting
 :class:`~secret_shield.models.ScanResult` to a renderer, and turns the result
 into an exit code. Anything that decides whether a file contains a secret is
 still the scanner's business, in the layers below.
@@ -30,9 +31,10 @@ only chooses between its values. Nothing here collapses every failure into
 ``130``                         Interrupted.
 ==============================  ==========================================
 
-``5`` (``EXIT_NOT_IMPLEMENTED``) is not reachable from this release. Git
-history scanning, SARIF and baselines are deliberately absent rather than
-stubs, so there is no flag that promises them.
+``5`` (``EXIT_NOT_IMPLEMENTED``) is not reachable from this release. It
+remains reserved for a capability that does not exist yet; a flag is never
+added until the code behind it is, so the value is never a promise the tool
+cannot keep.
 
 **stdout is the report; stderr is everything else.** A report on stdout is
 pipeable: ``secret-shield scan . --format json | jq`` works, and nothing
@@ -72,10 +74,10 @@ see :func:`_resolve_fingerprint`.
 What this release does not have
 -------------------------------
 
-No Git history scanning, no SARIF, no baseline, no allowlists, no network
-verification, and no coloured output -- the reports are deliberately plain
-text, so there is no ``--no-color`` to pass. There is no flag for a custom
-rule, because there is no safe way to accept one from a configuration file.
+No network verification, no allowlists and no custom-rule support. Reports
+are deliberately plain (text, JSON, Markdown and SARIF), so there is no
+``--no-color`` to pass, and there is no flag for a custom rule, because there
+is no safe way to accept one from a configuration file.
 """
 
 from __future__ import annotations
@@ -91,7 +93,7 @@ import tempfile
 import textwrap
 from collections.abc import Sequence
 from pathlib import Path
-from typing import IO, Any, Final
+from typing import IO, Any, Callable, Final
 
 from .config import ENV_PREFIX, ConfigError, load_config
 from .detectors.base import Rule
@@ -121,13 +123,8 @@ from .filters.paths import default_path_filter_config
 from .masking import strip_control_characters
 from .models import TOOL_NAME, TOOL_VERSION, Confidence, ScanResult, Severity
 from .baseline import (
-    BASELINE_SCHEMA_VERSION,
-    BASELINE_TOOL_NAME,
     Baseline,
     BaselineComparison,
-    BaselineEntry,
-    FindingClassification,
-    FindingIdentity,
     compare_with_baseline,
     create_baseline_from_result,
     load_baseline,
@@ -554,8 +551,10 @@ def _add_reporting_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="FILE",
         type=_positive,
         help=(
-            "load a baseline file to suppress known findings; "
-            "only new findings are reported and can fail the build"
+            "load a baseline of known findings and compare the scan against it; "
+            "stale entries are reported on stderr. Combined with --fail-on-new, "
+            "baselined findings are omitted from the report and only new "
+            "findings can fail the build"
         ),
     )
     baseline.add_argument(
@@ -563,8 +562,9 @@ def _add_reporting_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="FILE",
         type=_positive,
         help=(
-            "write an updated baseline to FILE, adding new findings to it; "
-            "requires --baseline to be set"
+            "write a baseline to FILE: a fresh baseline of this scan's findings "
+            "when --baseline is not given, otherwise the loaded baseline updated "
+            "with any new findings"
         ),
     )
 
@@ -587,8 +587,8 @@ def _add_reporting_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=False,
         help=(
-            "when using --baseline, exit 1 only if there are new findings "
-            "(not in baseline); baselined findings do not cause failure"
+            "requires --baseline: exit 1 only if there are new findings (not in "
+            "baseline); baselined findings do not cause failure"
         ),
     )
 
@@ -1069,49 +1069,68 @@ def _exit_code(
     return EXIT_SUCCESS
 
 
+def _baseline_argument_problem(args: argparse.Namespace) -> str | None:
+    """Return why the baseline flags cannot be honoured, or ``None``.
+
+    ``--fail-on-new`` only means something relative to a loaded baseline: on its
+    own it would silently do nothing, so it is refused rather than ignored.
+    ``--baseline-output`` stands on its own -- it is how the first baseline is
+    created -- so it is not tied to ``--baseline``.
+    """
+
+    if getattr(args, "fail_on_new", False) and not getattr(args, "baseline", None):
+        return "--fail-on-new requires --baseline to be set"
+    return None
+
+
 def _handle_baseline(
     args: argparse.Namespace, result: ScanResult
 ) -> tuple[ScanResult, BaselineComparison | None, Baseline | None]:
-    """Handle baseline loading, comparison, and updating.
+    """Load, compare against, and build the baseline a run asks for.
 
-    Returns a tuple of (filtered_result, comparison, updated_baseline).
-    The filtered_result has only new findings if baseline is used and --fail-on-new is set.
+    Returns ``(filtered_result, comparison, baseline_to_write)``. With
+    ``--fail-on-new`` and a loaded baseline the filtered result holds only the
+    new findings, so the report matches the exit code. ``--baseline-output``
+    writes a fresh baseline when no ``--baseline`` was loaded and an updated one
+    when it was.
     """
-    if not args.baseline:
-        return result, None, None
 
-    baseline_path = Path(args.baseline)
-    try:
-        baseline = load_baseline(baseline_path)
-    except FileNotFoundError:
-        _diagnostic(f"baseline file not found: {baseline_path}")
-        return result, None, None
-    except ValueError as exc:
-        _diagnostic(f"invalid baseline: {exc}")
-        return result, None, None
+    baseline: Baseline | None = None
+    comparison: BaselineComparison | None = None
 
-    comparison = compare_with_baseline(result, baseline)
+    if args.baseline:
+        baseline_path = Path(args.baseline)
+        try:
+            baseline = load_baseline(baseline_path)
+        except FileNotFoundError:
+            _diagnostic(f"baseline file not found: {baseline_path}")
+            return result, None, None
+        except ValueError as exc:
+            _diagnostic(f"invalid baseline: {exc}")
+            return result, None, None
 
-    # Report stale entries on stderr
-    if comparison.has_stale_entries:
-        _diagnostic(
-            f"baseline has {len(comparison.stale_entries)} stale entr"
-            f"{'y' if len(comparison.stale_entries) == 1 else 'ies'} "
-            f"(no matching finding in current scan)"
-        )
+        comparison = compare_with_baseline(result, baseline)
 
-    # If --fail-on-new, filter findings to only new ones for the report
-    if args.fail_on_new:
+        # Report stale entries on stderr
+        if comparison.has_stale_entries:
+            _diagnostic(
+                f"baseline has {len(comparison.stale_entries)} stale entr"
+                f"{'y' if len(comparison.stale_entries) == 1 else 'ies'} "
+                f"(no matching finding in current scan)"
+            )
+
+    # With --fail-on-new the report must show exactly what can fail the build.
+    if args.fail_on_new and comparison is not None:
         filtered_result = dataclasses.replace(result, findings=comparison.new_findings)
     else:
         filtered_result = result
 
     updated_baseline = None
     if args.baseline_output:
-        if not args.baseline:
-            _diagnostic("--baseline-output requires --baseline")
-            return filtered_result, comparison, None
-        updated_baseline = update_baseline(baseline, result, TOOL_VERSION)
+        if baseline is None:
+            updated_baseline = create_baseline_from_result(result, TOOL_VERSION)
+        else:
+            updated_baseline = update_baseline(baseline, result, TOOL_VERSION)
 
     return filtered_result, comparison, updated_baseline
 
@@ -1174,6 +1193,11 @@ def _command_scan(args: argparse.Namespace) -> int:
         _diagnostic(f"cannot scan {_one_line(target)}: {problem}")
         return EXIT_USAGE
 
+    baseline_problem = _baseline_argument_problem(args)
+    if baseline_problem is not None:
+        _diagnostic(baseline_problem)
+        return EXIT_USAGE
+
     try:
         fingerprint_key, include_fingerprint = _resolve_fingerprint(args)
     except _UsageError as exc:
@@ -1206,7 +1230,9 @@ def _command_scan(args: argparse.Namespace) -> int:
     # Handle baseline
     filtered_result, comparison, updated_baseline = _handle_baseline(args, result)
 
-    failure = _render_and_write(args, filtered_result, include_fingerprint=include_fingerprint)
+    failure = _render_and_write(
+        args, filtered_result, include_fingerprint=include_fingerprint
+    )
     if failure is not None:
         return failure
 
@@ -1332,6 +1358,11 @@ def _command_git(args: argparse.Namespace) -> int:
         _diagnostic(f"cannot scan {_one_line(target)}: {problem}")
         return EXIT_USAGE
 
+    baseline_problem = _baseline_argument_problem(args)
+    if baseline_problem is not None:
+        _diagnostic(baseline_problem)
+        return EXIT_USAGE
+
     try:
         fingerprint_key, include_fingerprint = _resolve_fingerprint(args)
     except _UsageError as exc:
@@ -1353,7 +1384,9 @@ def _command_git(args: argparse.Namespace) -> int:
     # Handle baseline
     filtered_result, comparison, updated_baseline = _handle_baseline(args, result)
 
-    failure = _render_and_write(args, filtered_result, include_fingerprint=include_fingerprint)
+    failure = _render_and_write(
+        args, filtered_result, include_fingerprint=include_fingerprint
+    )
     if failure is not None:
         return failure
 
@@ -1537,7 +1570,7 @@ def _command_rules_list(args: argparse.Namespace) -> int:
 # Entry point
 # ---------------------------------------------------------------------------
 
-_HANDLERS: Final[dict[str, Any]] = {
+_HANDLERS: Final[dict[tuple[str, str | None], Callable[[argparse.Namespace], int]]] = {
     ("scan", None): _command_scan,
     ("git", None): _command_git,
     ("rules", "list"): _command_rules_list,

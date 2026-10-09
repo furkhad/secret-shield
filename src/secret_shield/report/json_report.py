@@ -67,9 +67,6 @@ def _finding_to_dict(finding: Finding, *, include_fingerprint: bool) -> dict[str
     if finding.matched_keywords:
         data["matched_keywords"] = tuple(sorted(finding.matched_keywords))
 
-    if getattr(finding, "evidence", None):
-        data["evidence"] = finding.evidence
-
     if finding.remediation:
         data["remediation"] = sanitize_text(finding.remediation)
 

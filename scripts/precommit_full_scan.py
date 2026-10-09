@@ -18,7 +18,8 @@ if result.returncode not in (0, 1):
 data = json.loads(result.stdout)
 findings = data.get("findings", [])
 suspicious = [
-    f for f in findings
+    f
+    for f in findings
     if not f["location"]["path"].startswith("tests/") and f["confidence"] >= 3
 ]
 

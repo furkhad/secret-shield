@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from secret_shield.models import (
+    Confidence,
     DetectorKind,
     Finding,
     Location,
@@ -131,6 +132,24 @@ def test_findings_without_fingerprint() -> None:
     output = render_sarif(result, include_fingerprint=False)
     data = json.loads(output)
     assert "partialFingerprints" not in data["runs"][0]["results"][0]
+
+
+def test_result_rank_reflects_confidence() -> None:
+    """SARIF has no confidence field; confidence must survive as ``rank``."""
+
+    finding = make_finding(confidence=Confidence.HIGH_CONFIDENCE)
+    result = ScanResult(
+        findings=(finding,),
+        errors=(),
+        files_scanned=1,
+        bytes_scanned=10,
+        duration_seconds=0.1,
+        tool_version="0.1.0",
+    )
+    output = render_sarif(result)
+    data = json.loads(output)
+    result_obj = data["runs"][0]["results"][0]
+    assert result_obj["rank"] == 90.0
 
 
 def test_errors_included() -> None:

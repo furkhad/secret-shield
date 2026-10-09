@@ -57,7 +57,9 @@ This document describes the assets SecretShield protects, the threat actors and 
 
 **Mitigation:**
 - `PathFilterConfig.follow_symlinks` defaults to `false`
-- Even when `true`, `PathFilter.should_scan()` resolves the symlink target and verifies it is **inside the scan root** (`target.is_relative_to(root)`)
+- Even when `true`, `resolve_within()` (in `filters/paths.py`) resolves the whole
+  symlink chain and returns `None` unless the final target is the scan root or
+  inside it, so the walk never reads through an escaping link
 - `scan_path()` in `filesystem.py` validates every resolved path before reading
 - Tests: `tests/unit/test_path_filter.py` includes symlink escape attempts
 
@@ -71,7 +73,7 @@ This document describes the assets SecretShield protects, the threat actors and 
 - **Only** `git_cmd.py` invokes `subprocess`
 - **All** invocations use `argv` lists: `["git", "rev-parse", ...]`
 - **Never** `shell=True`
-- **Explicit timeout** on every call (default 30s)
+- **Explicit timeout** on every call (default 300s)
 - Revision arguments beginning with `-` are rejected before invocation (prevents option injection)
 - No user input is interpolated into command strings
 
@@ -102,23 +104,24 @@ This document describes the assets SecretShield protects, the threat actors and 
 **Mitigation:**
 | Resource | Limit | Location |
 | --- | --- | --- |
-| File size | `scan.max_file_size` (default 1 MiB) | `scanner.py`, `ScanConfig` |
-| Line length | `scan.max_line_length` (default 50k) | `scanner.py`, `tokenizer.py` |
-| File count | `scan.max_files` (default 50,000) | `filesystem.py`, `PathScanConfig` |
+| File size | `scan.max_file_size` (default 10 MiB) | `scanner.py`, `ScanConfig` |
+| Line length | `scan.max_line_length` (default 65536) | `filesystem.py`, `git_history.py` |
+| File count | `scan.max_files` (default 100,000) | `filesystem.py`, `PathScanConfig` |
 | Tree depth | `paths.max_depth` (default unlimited, configurable) | `filesystem.py`, `PathFilterConfig` |
-| Git blob size | `--max-blob-size` (default 10 MiB) | `git_history.py` |
+| Git blob size | `--max-blob-size` (default `scan.max_file_size`, 10 MiB) | `git_history.py` |
 | Git commit count | `--max-commits` (default unlimited, configurable) | `git_history.py` |
-| Git distinct blobs | `--max-blobs` (default unlimited, configurable) | `git_history.py` |
+| Git distinct blobs | `--max-blobs` (default 200,000) | `git_history.py` |
+| Git distinct paths | `--max-refs` (default 800,000) | `git_history.py` |
 | Config file size | `MAX_CONFIG_BYTES` = 1 MiB | `config.py` |
-| Subprocess timeout | 30s per `git` call | `git_cmd.py` |
-| Thread count | `scan.jobs` ≤ 64 | `config.py`, `threaded_scan.py` |
+| Subprocess timeout | 300s per `git` call | `git_cmd.py` |
+| Thread count | `scan.jobs` ≤ 64 | `config.py`, `filesystem.py` |
 
 - Binary files are sniffed (`binary.max_sniff_bytes` = 8 KiB) and skipped — not scanned
-- Control-character ratio > 5% → treated as binary, skipped
+- Control-character ratio > 30% → treated as binary, skipped
 - Each blob in Git history read **once** (keyed by object ID) — a file moved across 1000 commits is scanned once
-- `threaded_scan.py` uses bounded queue, fixed worker pool, backpressure
+- When `scan.jobs` > 1, `filesystem.py` uses a fixed `ThreadPoolExecutor` pool of at most 64 workers, and the walk is materialised under the `scan.max_files` bound
 
-**Residual Risk:** A repository with 50,001 tiny files will stop at the limit (exit code 3 = partial). User must raise `--max-files` deliberately.
+**Residual Risk:** A repository with 100,001 tiny files will stop at the limit (exit code 3 = partial). User must raise `--max-files` deliberately.
 
 ### T5: Configuration Injection
 
@@ -192,16 +195,16 @@ This document describes the assets SecretShield protects, the threat actors and 
 
 | Invariant | Test Location |
 | --- | --- |
-| No raw secret in `Finding` | `tests/unit/test_models.py::test_finding_no_raw_secret` |
-| Control chars stripped from paths | `tests/unit/test_models.py::test_location_strips_control_chars` |
-| Symlink outside root skipped | `tests/unit/test_path_filter.py::test_symlink_escape_blocked` |
-| Git argv list, no shell | `tests/unit/test_git_cmd.py::test_no_shell_invocation` |
-| Config unknown key = error | `tests/unit/test_config.py::test_unknown_key_rejected` |
+| No raw secret in `Finding` | `tests/unit/test_models.py::test_finding_cannot_hold_a_raw_secret` |
+| Control chars stripped from paths | `tests/functional/test_cli.py::test_a_filename_with_control_characters_is_sanitised` |
+| Symlink outside root skipped | `tests/unit/test_path_filter.py::test_a_symlink_out_of_the_root_is_refused` |
+| Git argv list, no shell | `tests/unit/test_git_cmd.py::test_this_is_the_only_module_in_the_package_that_imports_subprocess` |
+| Config unknown key = error | `tests/unit/test_config.py::test_unknown_key_raises` |
 | Config size cap enforced | `tests/unit/test_config.py::test_config_file_size_cap` |
 | Binary files skipped | `tests/unit/test_binary_detection.py` |
-| Exit code 3 > exit code 1 | `tests/functional/test_cli.py::test_partial_outranks_findings` |
-| Deterministic output | `tests/functional/test_cli.py::test_deterministic_json` |
-| Self-scan clean | `tests/integration/test_directory_scan.py::test_src_clean` |
+| Exit code 3 > exit code 1 | `tests/functional/test_cli.py::test_partial_scan_is_three_and_beats_findings` |
+| Deterministic output | `tests/functional/test_cli.py::test_repeated_runs_are_byte_identical` |
+| Self-scan clean | `tests/integration/test_directory_scan.py::test_the_package_source_produces_nothing` |
 
 ## Assumptions
 

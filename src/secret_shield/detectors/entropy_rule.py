@@ -154,7 +154,7 @@ class EntropyRuleConfig:
         max_raw_entropy: Candidates above this are ignored as non-credential
             text. Keeps natural language out, and keeps the reported entropy
             inside the range :class:`~secret_shield.models.Finding` accepts.
-        max_prose_words: Ignore candidates with at least this many
+        max_prose_words: Ignore candidates with more than this many
             space-separated words of two or more characters.
         max_severity: Ceiling for this rule's findings. May only reduce
             severity below MEDIUM, never raise it: entropy cannot rank impact.

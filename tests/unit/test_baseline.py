@@ -3,20 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from secret_shield.baseline import (
     BASELINE_SCHEMA_VERSION,
     BASELINE_TOOL_NAME,
-    Baseline,
     BaselineEntry,
     FindingIdentity,
     compare_with_baseline,
     create_baseline_from_result,
-    load_baseline,
-    save_baseline,
-    update_baseline,
-    FindingClassification,
 )
 from secret_shield.models import (
     DetectorKind,
@@ -132,8 +126,18 @@ def test_compare_with_baseline_baselined_finding() -> None:
 
 
 def test_compare_with_baseline_stale_entry() -> None:
-    finding1 = make_finding(value_fingerprint="abc123def456", location=Location(path="test1.py", line=1, column=1, source_kind=SourceKind.FILE))
-    finding2 = make_finding(value_fingerprint="def456abc123", location=Location(path="test2.py", line=1, column=1, source_kind=SourceKind.FILE))
+    finding1 = make_finding(
+        value_fingerprint="abc123def456",
+        location=Location(
+            path="test1.py", line=1, column=1, source_kind=SourceKind.FILE
+        ),
+    )
+    finding2 = make_finding(
+        value_fingerprint="def456abc123",
+        location=Location(
+            path="test2.py", line=1, column=1, source_kind=SourceKind.FILE
+        ),
+    )
     baseline_result = ScanResult(
         findings=(finding1, finding2),
         errors=(),
@@ -156,7 +160,12 @@ def test_compare_with_baseline_stale_entry() -> None:
 
 
 def test_baseline_matching_not_silently_suppress_changed() -> None:
-    finding_orig = make_finding(value_fingerprint="abc123def456", location=Location(path="test.py", line=1, column=1, source_kind=SourceKind.FILE))
+    finding_orig = make_finding(
+        value_fingerprint="abc123def456",
+        location=Location(
+            path="test.py", line=1, column=1, source_kind=SourceKind.FILE
+        ),
+    )
     baseline_result = ScanResult(
         findings=(finding_orig,),
         errors=(),
@@ -167,7 +176,12 @@ def test_baseline_matching_not_silently_suppress_changed() -> None:
     )
     baseline = create_baseline_from_result(baseline_result, "0.1.0")
     # Different value at same location
-    finding_changed = make_finding(value_fingerprint="def456abc123", location=Location(path="test.py", line=1, column=1, source_kind=SourceKind.FILE))
+    finding_changed = make_finding(
+        value_fingerprint="def456abc123",
+        location=Location(
+            path="test.py", line=1, column=1, source_kind=SourceKind.FILE
+        ),
+    )
     current = ScanResult(
         findings=(finding_changed,),
         errors=(),

@@ -16,7 +16,6 @@ from secret_shield.models import (
 from secret_shield.report import render_sarif
 from secret_shield.baseline import (
     create_baseline_from_result,
-    compare_with_baseline,
     load_baseline,
     save_baseline,
 )

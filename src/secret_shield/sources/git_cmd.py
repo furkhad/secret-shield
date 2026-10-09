@@ -150,7 +150,7 @@ import threading
 import time
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, IO
 
 __all__ = [
     "CHUNK_SIZE",
@@ -1072,7 +1072,7 @@ def iter_object_headers(
             :data:`KIND_OBJECT_FORMAT`.
     """
 
-    yield from _batch(repo, object_names, timeout=timeout, with_contents=False)
+    yield from _batch(repo, object_names, timeout=timeout, with_contents=False)  # type: ignore[misc]
 
 
 def iter_object_payloads(
@@ -1105,7 +1105,7 @@ def iter_object_payloads(
 
     yield from _batch(
         repo, object_names, timeout=timeout, with_contents=True, max_payload=max_payload
-    )
+    )  # type: ignore[misc]
 
 
 def _batch(
@@ -1392,7 +1392,7 @@ def _stream(
     *,
     repo: str | os.PathLike[str],
     timeout: float,
-    stdin: object = None,
+    stdin: int | IO[bytes] | None = None,
 ) -> Iterator[_Stream]:
     """Run one Git command and yield its stdout as a timed :class:`_Stream`.
 

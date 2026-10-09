@@ -27,7 +27,9 @@ if result.returncode not in (0, 1):
 try:
     data = json.loads(result.stdout)
 except json.JSONDecodeError:
-    print(f"Failed to parse secret-shield output: {result.stdout[:200]}", file=sys.stderr)
+    print(
+        f"Failed to parse secret-shield output: {result.stdout[:200]}", file=sys.stderr
+    )
     sys.exit(1)
 
 findings = data.get("findings", [])
@@ -42,7 +44,10 @@ for f in findings:
 if suspicious:
     print("FAIL: Real credential patterns found in staged files:", file=sys.stderr)
     for f in suspicious:
-        print(f"  {f['location']['path']}:{f['location']['line']} {f['rule_id']} conf={f['confidence']}", file=sys.stderr)
+        print(
+            f"  {f['location']['path']}:{f['location']['line']} {f['rule_id']} conf={f['confidence']}",
+            file=sys.stderr,
+        )
     sys.exit(1)
 
 print("OK: No real credential patterns in staged files")
