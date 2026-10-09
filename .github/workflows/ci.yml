@@ -69,7 +69,11 @@ jobs:
       - name: Install lint dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy
+          # Pin ruff/mypy to the same versions as .pre-commit-config.yaml.
+          # Unpinned installs drift (run 37896104466 pulled ruff 0.16.10,
+          # whose default rule set flags 83 diagnostics that ruff 0.5.0 does
+          # not), so the lint job and pre-commit must run the same tools.
+          pip install ruff==0.5.0 mypy==1.10.0
 
       - name: Ruff check
         run: |
@@ -157,15 +161,21 @@ jobs:
       - name: Scan working tree (filesystem)
         id: scan_fs
         run: |
+          set +e
           secret-shield scan . --format json --output scan-results.json
-          echo "exit_code=${{ steps.scan_fs.outputs.exit_code }}" >> $GITHUB_OUTPUT
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
       - name: Scan Git history (vendor rules only, entropy filtered)
         id: scan_git
         run: |
+          set +e
           secret-shield git . --format json --min-confidence high_confidence --output git-history-results.json
-          echo "exit_code=${{ steps.scan_git.outputs.exit_code }}" >> $GITHUB_OUTPUT
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
       - name: Verify self-scan findings only in tests/
@@ -234,38 +244,7 @@ jobs:
           # Independent guard: runs scanner with DEFAULT config only (no .secretshield.toml),
           # checks for vendor rule matches (HIGH_CONFIDENCE+) outside tests/.
           # Entropy findings (PROBABLE) are expected noise and allowed.
-          # This catches real credential patterns that the repo config might be hiding.
-          python -c "
-          import json
-          import sys
-          import tempfile
-          import os
-          from secret_shield.config import load_config, default_path_scan_config
-          from secret_shield.sources.filesystem import scan_path
-          from pathlib import Path
-
-          # Use default config only (no file, no env, no overrides)
-          # to get an independent view of what the scanner sees
-          with tempfile.TemporaryDirectory() as tmpdir:
-              cfg = load_config(project_root=Path(tmpdir))
-              results = scan_path(cfg.path_scan_config(), Path('.'))
-
-          # Filter findings outside tests/ with HIGH_CONFIDENCE or higher
-          # (vendor rule matches). Entropy findings are PROBABLE (2) and allowed.
-          suspicious = []
-          for finding in results.findings:
-              path = finding.location.path
-              if not path.startswith('tests/'):
-                  if finding.confidence.value >= 3:  # HIGH_CONFIDENCE or VERIFIED
-                      suspicious.append(finding)
-
-          if suspicious:
-              print('FAIL: Real credential patterns found in non-test files:', file=sys.stderr)
-              for f in suspicious:
-                  print(f\"  {f.location.path}:{f.location.line} {f.rule_id} conf={f.confidence.label}\", file=sys.stderr)
-              sys.exit(1)
-          print('OK: No real credential patterns (vendor rule matches) in non-test files')
-          "
+          python scripts/ci_credential_guard.py .
 
   pre-commit:
     name: Pre-commit Hooks
